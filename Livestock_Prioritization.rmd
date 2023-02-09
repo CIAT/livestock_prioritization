@@ -1,0 +1,4312 @@
+---
+title: "Priorities for investing in low-emissions and climate-resilient livestock systems"
+authors: "Peter Steward & Camila Bonilla-Cedrez"
+date: "07/07/2022"
+output: html_document
+runtime: shiny
+---
+
+<style type="text/css">
+.main-container {
+  max-width: 1800px;
+  margin-left: auto;
+  margin-right: auto;
+}
+</style>
+
+
+```{r setup, include=F}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.align = 'center')
+```
+
+```{r packages, echo=F,  include=F}
+if(!require("pacman", character.only = TRUE)){install.packages("pacman",dependencies = T)}
+
+required.packages <- c("biscale",
+                       "Cairo",
+                       "colourpicker",
+                       "cowplot",
+                       "data.table",
+                       "DT",
+                       "ggplot2",
+                       "ggpubr",
+                       "plotly",
+                       "raster",
+                       "RColorBrewer",
+                       "sf",
+                       "stringr",
+                       "terra",
+                       "viridis")
+
+pacman::p_load(char=required.packages,install = T,character.only = T)
+
+options(scipen = 999)
+```
+
+*Authors: Peter Steward & Camila Bonilla-Cedrez*
+*E-mail: p.steward@cgiar.org*
+
+## {.tabset .tabset-fade .tabset-pills}
+For this paper, we synthesized spatial data to identify priority geographies for livestock system investments in adaptation and mitigation. The study area included livestock production systems in all low-income, low- and middle-income, and upper-middle-income countries in mid and low latitudes.  
+
+This interactive Rmarkdown script can be used to merge or disaggregate adaptation and mitigation indicators at regional, national, and sub-national scales. Meta-data for the data used in this analysis can be found in the `Data/Dataset_Summary.xlsx` file of the R-project folder. 
+
+```{r Load CGIAR Countries,echo=F, warning=F}
+CGIAR_admin1_sf<-sf::read_sf("Data/GADM/4.1/gadm41_1.shp")
+CGIAR_admin1_sf$ADMIN<-CGIAR_admin1_sf$NAME_1
+CGIAR_admin1_sf$ADMIN[grep("xico",CGIAR_admin1_sf$ADMIN)]<-"Mexico"
+CGIAR_admin1_sf$ADMIN[grep("and Pr",CGIAR_admin1_sf$ADMIN)]<-"Sao Tome and Principe"
+CGIAR_admin1_sf$ADMIN[grep("d'Ivoire",CGIAR_admin1_sf$ADMIN)]<-"Cote d'Ivoire"
+CGIAR_admin1_sf$ADMIN[grep("Swaziland",CGIAR_admin1_sf$ADMIN)]<-"eSwatini"
+
+CGIAR_admin1_sf$NAME_0<-CGIAR_admin1_sf$COUNTRY
+CGIAR_admin1<-terra::vect(CGIAR_admin1_sf)
+
+CGIAR_countries_sf<-sf::read_sf("Data/GADM/4.1/gadm41_0.shp",options = "ENCODING=UTF8")
+CGIAR_countries_sf$NAME_0<-CGIAR_countries_sf$COUNTRY
+CGIAR_countries_sf$ADMIN<-CGIAR_countries_sf$COUNTRY
+CGIAR_countries_sf$ADMIN[grep("xico",CGIAR_countries_sf$ADMIN)]<-"Mexico"
+CGIAR_countries_sf$ADMIN[grep("and Pr",CGIAR_countries_sf$ADMIN)]<-"Sao Tome and Principe"
+CGIAR_countries_sf$ADMIN[grep("d'Ivoire",CGIAR_countries_sf$ADMIN)]<-"Cote d'Ivoire"
+CGIAR_countries_sf$ADMIN[grep("Swaziland",CGIAR_countries_sf$ADMIN)]<-"eSwatini"
+
+
+CGIAR_countries<-terra::vect(CGIAR_countries_sf)
+```
+
+```{r update country names for plotting, eval=T,echo=F, warning=F}
+CGIAR_countries2_sf<-CGIAR_countries_sf
+CGIAR_countries2_sf$ADMIN[CGIAR_countries2_sf$ADMIN=="United Republic of Tanzania"]<-"Tanzania"
+CGIAR_countries2_sf$ADMIN[CGIAR_countries2_sf$ADMIN=="Democratic Republic of the Congo"]<-"DRC"
+CGIAR_countries2_sf$ADMIN[CGIAR_countries2_sf$ADMIN=="Central African Republic"]<-"CAR"
+
+CGIAR_countries2<-terra::vect(CGIAR_countries2_sf)
+```
+
+**Spatial Scope of Analysis**  
+The level of spatial aggregation determines if statistics are calculated at 1) WB Region; 2) Country; or 3) GADM admin 1 levels. At the country level all countries within selected WB Regions are analyzed. If you have chosen the `Country` level you can select which WB Regions to include in analysis (default = all WB Regions). If you have chosen the `Admin1` level, you can select a focal country. Whilst we suggest you analyze these sub-national areas a single country at a time, it is possible to select multiple countries.
+
+:::: {style="display: flex;"}
+::: {}
+```{r choose focal level, echo=F, warning=F}
+  selectInput(inputId="Analysis.Level", 
+             label= "Choose level of spatial aggregation", 
+             choices = c("Region","Country","Admin1"), 
+             selected = "Country",
+             multiple = F,
+             width="240px")
+```
+:::
+:::{.col data-latex="{0.05\textwidth}"}
+\  
+\  
+\  
+:::
+:::{}
+```{r choose region, echo=F, warning=F}
+
+  checkboxGroupInput(inputId="Region", 
+             label= "Choose one or more regions (if level = Country)", 
+             choices = sort(unique(CGIAR_countries2$Region)), 
+             selected = unique(CGIAR_countries2$Region),
+             inline = T,
+             width="400px")
+```
+:::
+:::{}
+```{r choose country, echo=F}
+  selectInput(inputId="Country", 
+             label= "Choose a country (if level = Admin1)", 
+             choices = sort(unique(CGIAR_admin1$NAME_0)), 
+             selected = "Brazil",
+             multiple = T,
+             width="300px")
+```
+:::
+:::{}
+```{r Area weight indicators, echo=F}
+  selectInput(inputId="AreaWeight",
+             label="Divide indicators by area?",
+             choices = c("Yes","No"), 
+             selected = "No",
+             multiple = F,
+             width="200px")
+           
+```
+:::
+::::
+
+**Mask priorization indicators by poverty**
+Here you can choose to 1) mask challenge prioritization by poverty; 2) choose the poverty variable; and 3) set thresholds for the classification of poverty in to high, medium, and low classes. When poverty is used as a mask low poverty areas are masked from the analysis.
+
+:::: {style="display: flex;"}
+::: {}
+```{r Poverty - Apply poverty mask 1,echo=F}
+  selectInput(inputId="Param.Pov.1", 
+              label="Mask climate hazards?",
+              choices = c("Yes","No"),
+              selected="Yes", 
+              multiple = F,
+              width="200px")
+```
+:::
+:::{}
+```{r Poverty - Apply poverty mask 3,echo=F}
+  selectInput(inputId="Param.Pov.3", 
+              label="Mask exposure?",
+              choices = c("Yes","No"),
+              selected="Yes", 
+              multiple = F,
+              width="200px")
+```
+:::
+:::{}
+```{r Poverty - Apply poverty mask 2,echo=F}
+  selectInput(inputId="Param.Pov.2", 
+              label="Mask emissions?",
+              choices = c("Yes","No"),
+              selected="No", 
+              multiple = F,
+              width="200px")
+```
+:::
+:::{}
+```{r Poverty - Apply poverty mask 4,echo=F}
+  selectInput(inputId="Param.Pov.4", 
+              label="Mask SOC?",
+              choices = c("Yes","No"),
+              selected="Yes", 
+              multiple = F,
+              width="120px")
+```
+:::
+:::{}
+```{r Poverty - Choose variable,echo=F}
+  selectInput(inputId="Param.Pov.Layer", 
+              label="Select poverty layer",
+              choices = c("poor_ppp19","poor_ppp21","poor_ppp31","poor_ppp32","poor_ppp55","poor_b40"),
+              selected="No", 
+              multiple = F,
+              width="200px")
+```
+:::
+:::{}
+```{r Poverty - High Threshold,echo=F}
+  numericInput(inputId="Poverty.High",
+             label="High poverty",
+             value=90,
+             min=0,
+             max=100,
+             step=1,
+             width="150px"
+             )
+```
+:::
+:::{}
+```{r Poverty - Medium Threshold,echo=F}
+  numericInput(inputId="Poverty.Med",
+             label="Medium poverty",
+             value=75,
+             min=0,
+             max=100,
+             step=1,
+             width="150px"
+             )
+```
+:::
+:::{}
+```{r Poverty - Low Threshold,echo=F}
+  numericInput(inputId="Poverty.Low",
+             label="Low poverty",
+             value=10,
+             min=0,
+             max=100,
+             step=1,
+             width="150px"
+             )
+```
+:::
+::::
+
+**Plotting Parameters**
+
+:::: {style="display: flex;"}
+::: {}
+```{r Plot Palette,echo=F}
+  selectInput(inputId="Palette", 
+              label="Fill palette",
+              choices = c("magma","inferno","plasma","viridis","cividis","rocket","mako","turbo"),
+              selected="turbo", 
+              multiple = F,
+              width="200px")
+```
+:::
+:::{}
+```{r Plot text size,echo=F}
+  numericInput(inputId="TextSize", 
+              label="Adjust text size",
+              value = 1.2,
+              min=1, 
+              max=20,
+              step = 0.1,
+              width="200px")
+```
+:::
+:::{}
+```{r Plot FontFace,echo=F}
+  selectInput(inputId="FontFace", 
+              label="Font face",
+              choices = c("plain", "bold"),
+              selected="plain", 
+              multiple = F,
+              width="200px")
+```
+:::
+:::{}
+```{r  Plot Legend Position,echo=F}
+  selectInput(inputId="LegPos", 
+              label="Legend position",
+              choices = c("bottomright", "bottom", "bottomleft", "left", "topleft", "top", "topright", "right","center"),
+              selected="bottomright", 
+              multiple = F,
+              width="200px")
+```
+:::
+:::{}
+```{r  Plot Legend Cols,echo=F}
+  numericInput(inputId="LegCols", 
+              label="Legend columns",
+              value = 2,
+              min=1, 
+              max=20,
+              step = 1,
+              width="200px")
+```
+:::
+:::{}
+```{r Plot Base Width,echo=F}
+  numericInput(inputId="PlotBaseWidth", 
+              label="Plot base width (px)",
+              value = 1200,
+              min=100, 
+              max=5000,
+              step = 100,
+              width="200px")
+```
+:::
+:::{}
+```{r Plot Colours Number,echo=F}
+  numericInput(inputId="Ncolours", 
+              label="Colour intervals",
+              value = 30,
+              min=5, 
+              max=100,
+              step = 1,
+              width="200px")
+```
+:::
+:::{}
+```{r Plot PanelSpacing,echo=F}
+  numericInput(inputId="PanelSpace", 
+              label="Panel Spacing",
+              value = 1,
+              min=0, 
+              max=20,
+              step = 1,
+              width="200px")
+```
+:::
+::::
+
+:::: {style="display: flex;"}
+::: {}
+```{r Adjust Alpha,echo=F}
+  numericInput(inputId="Alpha", 
+              label="Adjust alpha",
+              value = 0.75,
+              min=0, 
+              max=1,
+              step = 0.05,
+              width="200px")
+```
+:::
+:::{}
+```{r Adjust Max Pixels,echo=F}
+  numericInput(inputId="MaxPixels", 
+              label="Adjust max pixels",
+              value = 5*10^5,
+              min=10^5, 
+              max=10^7,
+              step = 10^5,
+              width="200px")
+```
+:::
+:::{}
+```{r  Adjust Plot Height, echo=F}
+numericInput(inputId="Plot.Height",
+             label="Adjust plot height",
+             value=0.5,
+             min=0.1,
+             max=3,
+             step=0.1, 
+             width="200px")
+```
+:::
+:::{}
+```{r Adjust Plot Width , echo=F}
+numericInput(inputId="Plot.Width",
+             label="Adjust plot width",
+             value=1,
+             min=0.1,
+             max=3,
+             step=0.1,
+             width="200px")
+```
+:::
+:::{}
+```{r Max Bars,echo=F}
+  numericInput(inputId="Max.Bars",
+               label="Max countries to show",
+               value=20,
+               min=1,
+               max=50,
+               step=1,
+               width="200px"
+             )
+```
+:::
+:::{}
+```{r Plot Coordflip,echo=F}
+  selectInput(inputId="CoordFlip", 
+              label="Flip x & y axis in barplots?",
+              choices = c("Yes","No"),
+              selected="Yes", 
+              multiple = F,
+              width="200px")
+```
+:::
+:::{}
+```{r Plot polygon boundary colour picker, echo =F}
+  colourInput(inputId="BorderCol",
+              label="Polygon border colour",
+              value="black")
+```
+:::
+::::
+
+```{r Plot Size - create bar height and width functions, echo=F}
+  Plot.Height <- function(){input$PlotBaseWidth*input$Plot.Height}
+  Plot.Width <- function(){input$PlotBaseWidth*input$Plot.Width}
+```
+
+**Plot Save Settings**  
+
+:::: {style="display: flex;"}
+:::{}
+```{r Saveplot - SaveFormat, echo=F}
+  selectInput(inputId="SavePlot.Format", 
+              label="Save format",
+              choices = c( "pdf", "jpeg", "tiff", "png"),
+              selected="png", 
+              multiple = F,
+              width="200px")
+```
+:::
+:::{}
+```{r Saveplot - Plot Save Resolution, echo=F}
+numericInput(inputId="SavePlot.Resolution",
+             label="Plot resolution (DPI)",
+             value=600,
+             min=300,
+             max=1500,
+             step=100,
+             width="200px")
+```
+:::
+:::{}
+```{r Saveplot - Plot Scale, echo=F}
+numericInput(inputId="SavePlot.Scale",
+             label="Plot save scale",
+             value=2,
+             min=0.1,
+             max=5,
+             step=0.01,
+             width="200px")
+```
+:::
+::: {}
+```{r Saveplot - Plot Save Width, echo=F}
+numericInput(inputId="SavePlot.Width",
+             label="Plot save width (mm)",
+             value=89,
+             min=1,
+             max=1500,
+             step=5,
+             width="200px")
+```
+:::
+:::{}
+```{r Saveplot - Plot Save Height, echo=F}
+numericInput(inputId="SavePlot.Height",
+             label="Plot save height (mm)",
+             value=89,
+             min=1,
+             max=1500,
+             step=5,
+             width="200px")
+```
+:::
+:::{}
+```{r Saveplot - Plot Directory, echo=F}
+    textInput(inputId="SavePlot.Dir",
+              label="Directory for saving plots", 
+              value="Enter path here",
+              width="400px")
+reactive({
+  if(input$SavePlot.Dir!="Enter path here"){
+    if(!dir.exists(input$SavePlot.Dir)){
+      dir.create(input$SavePlot.Dir,recursive = T)
+    }
+    }
+  })
+            
+```
+:::
+::::
+
+```{r Set Extraction Layer, echo = F}
+ExtractBy<-reactive({
+  if(input$Analysis.Level=="Region"){
+    WB_Regions
+  }else{
+    if(input$Analysis.Level=="Country"){
+    CGIAR_countries2[CGIAR_countries2$Region %in% input$Region,]
+    }else{
+      CGIAR_admin1[CGIAR_admin1$NAME_0 %in% input$Country,]
+    }
+  }
+})
+
+ExtractBySf<-reactive({
+  if(input$Analysis.Level=="Region"){
+    WB_Regions_sf
+  }else{
+    if(input$Analysis.Level=="Country"){
+    CGIAR_countries2_sf[CGIAR_countries2_sf$Region %in% input$Region,]
+    }else{
+      CGIAR_admin1_sf[CGIAR_admin1_sf$NAME_0 %in% input$Country,]
+    }
+  }
+})
+
+
+ExtractBy.Area.km<-reactive({terra::expanse(ExtractBy(),unit="km")})
+
+Analysis.Level<-reactive({
+  if(input$Analysis.Level=="Region"){
+     WB_Regions$Region
+  }else{
+    if(input$Analysis.Level=="Country"){
+    CGIAR_countries2$ADMIN[CGIAR_countries2$Region %in% input$Region]
+    }else{
+      CGIAR_admin1$NAME_1[CGIAR_admin1$NAME_0 %in% input$Country]
+    }
+  }
+})
+
+```
+
+### Key Datasets {.tabset .tabset-fade .tabset-pills}
+
+#### Geographies
+Load CGIAR countries and Worldbank regions:
+```{r CGIAR_countries,echo =T,eval=F}
+CGIAR_countries <- terra::vect("Data/GADM/4.1/gadm41_0.shp")
+```
+
+Create Worldbank regions layer:
+```{r Create Worldbank regional layer}
+WB_Regions<-terra::vect("Data/GADM/4.1/WB_Regions.shp")
+WB_Regions$ADMIN<-WB_Regions$Region
+
+WB_Regions_sf<-sf::st_as_sf(WB_Regions,na.fail=T)
+```
+
+Create CGIAR admin layer:
+```{r Load CGIAR ADMIN 1 echo,echo=T,eval=F}
+CGIAR_admin1<-terra::vect("Data/GADM/4.1/gadm41_1.shp")
+```
+
+```{r plot WB Regions, echo =F}
+renderPlot({terra::plot(WB_Regions,
+                        "Region",
+                        legend=T,
+                        main="WB Regions",
+                        border=input$BorderCol,
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        type="classes",
+                        col=sample(viridis(n=length(WB_Regions),option =input$Palette),replace=F),
+                        cex.main = input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F)},
+           height=Plot.Height, width=Plot.Width)
+```
+
+```{r plot CGIAR Countries, echo =F}
+renderPlot({terra::plot(CGIAR_countries2,
+                        "ADMIN",
+                        main="CG Countries",
+                        border=input$BorderCol,
+                        legend=F,
+                        type="classes",
+                        pax=list(cex.axis=input$TextSize),
+                        col=sample(viridis(n=length(CGIAR_countries2),option =input$Palette),replace=F),
+                        cex.main = input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F
+                        )},
+           height=Plot.Height, width=Plot.Width)
+```
+
+```{r plot CGIAR admin1, echo =F}
+renderPlot({terra::plot(CGIAR_admin1,
+                        "NAME_0",
+                        legend=F,
+                        type="classes",
+                        border=input$BorderCol,
+                        main="CG Admin1 (GADM 3.6)",
+                        cex.main = input$TextSize*1.2,
+                        pax=list(cex.axis=input$TextSize),
+                        col=sample(viridis(n=length(unique(CGIAR_admin1$NAME_0)),option =input$Palette),replace=F),
+                        axes = F,
+                        frame.plot= F)},
+           height=Plot.Height, width=Plot.Width)
+```
+
+#### Base Raster
+Load base raster to resample other datasets to:
+```{r BaseRaster, echo = T}
+BaseRaster<-terra::rast("Data/Exposure/cell5m_livestock_vop.tif")
+BaseRaster<-terra::crop(BaseRaster,CGIAR_countries2)
+```
+
+Calculate base raster cell sizes:
+```{r Cellsize,echo=T}
+CellSize.km<-terra::cellSize(BaseRaster,mask=T, unit="km")
+```
+
+#### Protected Areas
+Load [World Protected Areas (WDPA)](https://www.protectedplanet.net/en):
+```{r load WDPA}
+WDPA_rast<-terra::rast("Data/WDPA/WDPA_CGIAR_countries.tif")
+```
+
+Convert WDPA data to raster format (note that a pre-rasterized dataset is provided for this markdown):
+```{r how to process WDPA_rast,eval=F}
+  WDPA_vect<-terra::vect("D:/WDPA_Jul2021_Public_shp_0/WDPA_Jul2021_Public_shp-polygons.shp")
+  WDPA_vect<-terra::intersect(WDPA_vect,CGIAR_countries2)
+  WDPA_rast<-terra::rasterize(WDPA_vect,BaseRaster,field="IUCN_CAT")
+  terra::writeRaster(WDPA_rast, filename="Data/WDPA/WDPA_CGIAR_countries.tif", overwrite=T)
+```
+
+```{r plot WPDA, echo =F}
+renderPlot({terra::plot(mask(WDPA_rast,CGIAR_countries2),
+                        main="WDPA Protected Areas",
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                        cex.main = input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F)
+          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  },height=Plot.Height, width=Plot.Width)
+```
+
+
+#### Livestock Production Systems
+Load [GLPC Livestock Production Systems (LPS) map](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/WPDSZE) by [Robinson et al. 2014](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0096084):
+```{r Load LPS}
+LPS<-terra::resample(terra::rast("Data/GLPS/glps_gleam_61113_10km.tif"),BaseRaster,method="near")
+GPLS_Legend<-data.table::fread("Data/GLPS/LPS_legend_RGB.csv")
+GPLS_Legend[,!c("System","Irrigation","Aridity")]
+```
+
+Set non-suitable systems to NA (creating a Livestock Production Systems mask):
+```{r subset LPS}
+LPS_Suitable<-data.table::copy(LPS)
+LPS_Suitable[which(LPS_Suitable[] %in% c(13,14,15))]<-NA
+LPS_Suitable<-LPS_Suitable-1
+
+levels(LPS_Suitable)<-data.frame(value=0:11,LPS=GPLS_Legend[1:12,System_Full])
+```
+
+```{r plot LPS, echo =F}
+renderPlot({terra::plot(mask(LPS_Suitable,CGIAR_countries2),
+                        main="Global Distribution of LPS (Robinson et al. 2014)",
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        col=viridis(n=nrow(terra::cats(LPS_Suitable)[[1]]),option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                        cex.main = input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F)
+          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  },height=Plot.Height, width=Plot.Width)
+```
+
+#### Livestock Numbers
+Load [Number of livestock rasters](https://dataverse.harvard.edu/dataverse/glw_3) by [Gilbert et al., 2018](https://www.nature.com/articles/sdata2018227):
+```{r Load Livestock rasters}
+Cattle<-terra::rast("Data/GLW3/5_Ct_2010_Da.tif")
+Buffalo<-terra::rast("Data/GLW3/5_Bf_2010_Da.tif")
+Chicken<-terra::rast("Data/GLW3/5_Ch_2010_Da.tif")
+Goat<-terra::rast("Data/GLW3/5_Gt_2010_Da.tif")
+Horse<-terra::rast("Data/GLW3/5_Ho_2010_Da.tif")
+Pig<-terra::rast("Data/GLW3/5_Pg_2010_Da.tif")
+Sheep<-terra::rast("Data/GLW3/5_Sh_2010_Da.tif")
+
+```
+We are using interpolated rasters indicated by `_Da` in the filename.
+
+Convert number of livestock into total livestock units (TLU) as per [Rothman-Ostrow et al. 2020](https://www.frontiersin.org/articles/10.3389/fvets.2020.556788/full):
+```{r Combine Livestock rasters}
+TLU<-Cattle*0.7 + Buffalo*0.7 + Sheep*0.1 + Goat*0.1 + 0.01*Chicken + 0.2*Pig + 0.8*Horse
+
+Livestock<-c(Cattle,Buffalo,Chicken,Goat,Horse,Pig,Sheep,TLU)
+names(Livestock)<-c("Cattle.LU","Buffalo.LU","Chicken.LU","Goat.LU","Horse.LU","Pig.LU","Sheep.LU","Total.LU")
+```
+
+Total global livestock units = `r round(sum(TLU[],na.rm = T)/10^6,1)` million.  
+Total livestock units in geography selected = `r reactive({round(sum(terra::mask(TLU,ExtractBy())[],na.rm=T)/10^6,1)})` million.
+
+```{r plot TLU, echo =F}
+renderPlot({terra::plot(mask(log10(TLU),CGIAR_countries2),
+                        main="log10(Total Livestock Units)",
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                        cex.main = input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F)
+          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  },height=Plot.Height, width=Plot.Width)
+```
+
+#### Poverty
+The adaptive capacity layer of poverty is represented by the percentage of people living on 1.90 USD/day or less.
+```{r Poverty - read in dataset}
+poverty<-terra::vect(list.files("Data/Adaptive_Capacity","global_poverty_nov2018_CGIAR_CB.shp",recursive=T,full.names = T))
+poverty$poor_ppp19[poverty$poor_ppp19==-1]<-NA
+poverty$poor_ppp21[poverty$poor_ppp21==-1]<-NA
+poverty$poor_ppp31[poverty$poor_ppp31==-1]<-NA
+poverty$poor_ppp32[poverty$poor_ppp32==-1]<-NA
+poverty$poor_ppp55[poverty$poor_ppp55==-1]<-NA
+poverty$poor_b40[poverty$poor_b40==-1]<-NA
+
+poverty2<-reactive({terra::rasterize(poverty,BaseRaster,field=input$Param.Pov.Layer)*100})
+```
+
+```{r Povery - Plot Poverty,echo=F}
+renderPlot({
+terra::plot(poverty2(),
+     maxcell=input$MaxPixels,
+     pax=list(cex.axis=input$TextSize),
+     plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+     col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+     cex.main=input$TextSize,main='Population under poverty (%)',
+                        axes = F,
+                        frame.plot= F)
+terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+},height=Plot.Height, width=Plot.Width)
+
+```
+
+```{r Poverty - classify}
+PovClassFun2<-function(Data,THigh,TMed,TLow,Name){
+  Data[which(Data[]<TLow)]<-NA
+  Data[which(Data[]<TMed)]<-0
+  Data[which(Data[]>=TMed & Data[]<THigh)]<-1
+  Data[which(Data[]>=THigh)]<-2
+  levels(Data)<-data.frame(value=c(0,1,2),poverty_class=c("low_medium","medium_high","high"))
+  names(Data)<-Name
+  return(Data)
+}
+
+
+poverty_class<-reactive({
+  PovClassFun2(Data = poverty2(),
+            THigh = input$Poverty.High,
+            TMed = input$Poverty.Med,
+            TLow = input$Poverty.Low,
+            Name = "poverty")
+})
+
+
+```
+
+```{r Povery - Plot Poverty Classified,echo=F}
+renderPlot({
+terra::plot(poverty_class(),
+     maxcell=input$MaxPixels,
+     pax=list(cex.axis=input$TextSize),
+     plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+     col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+     cex.main=input$TextSize,main='Population under poverty (classes)',
+     axes = F,
+     frame.plot= F)
+  terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+},height=Plot.Height, width=Plot.Width)
+
+```
+
+
+### Climate Hazards x Exposure {.tabset .tabset-fade .tabset-pills}
+Hazard and poverty classification thresholds can be adjusted in the Datasets section.
+
+#### Datasets {.tabset .tabset-fade .tabset-pills}
+
+##### Hazards
+
+**Hazard thresholds**
+
+:::: {style="display: flex;"}
+::: {}
+```{r Hazards - CV High Value,echo=F}
+  numericInput(inputId="Hazards.CV.High",
+             label="Rainfall CV high variability (HCV)",
+             value=15,
+             min=0,
+             max=50,
+             step=1,
+             width="240px"
+             )
+```
+:::
+:::{}
+```{r Hazards - CV Extreme Value,echo=F}
+  numericInput(inputId="Hazards.CV.Ex",
+             label="Rainfall CV extremely variable (ExCV)",
+             value=30,
+             min=0,
+             max=50,
+             step=1,
+             width="260px"
+             )
+```
+:::
+:::{}
+```{r Hazards - Thi Threshold,echo=F}
+  numericInput(inputId="Hazards.Thi",
+             label="Thermal stress index (ThI)",
+             value=79,
+             min=0,
+             max=200,
+             step=1,
+             width="200px"
+             )
+```
+:::
+:::{}
+```{r Hazards - Drydays Threshold,echo=F}
+  numericInput(inputId="Hazards.Drydays", 
+             label="Consecutive drydays (D)",
+             value=25,
+             min=0,
+             max=100,
+             step=1,
+             width="200px"
+             )
+```
+:::
+:::{}
+```{r Hazards - Floodrisk Threshold,echo=F}
+  numericInput(inputId="Hazards.Floodrisk",
+             label="Floodrisk (F)",
+             value=1,
+             min=0,
+             max=5,
+             step=1,
+             width="220px"
+             )
+```
+:::
+::::
+
+```{r Hazards - read in datasets}
+# To characterize climate variability, we used the coefficient of variation of annual mean rainfall, derived from the CHIRPS dataset (Funk et al., 2015).
+rain_cv<-terra::resample(terra::rast(list.files("./Data/Hazards","chirps_cv",full.names = T)),BaseRaster,method="bilinear")
+# Areas with risk of drought were defined as having more than 25 days without rain per month on average.
+drydays<-terra::resample(terra::rast(list.files("./Data/Hazards","dry_days_1981_2019_mean",full.names = T)),BaseRaster,method="bilinear")
+# To define areas with risk of flooding we used the UNEP/DEWA/GRID-Europe (2011) dataset, in which flooding risk is ranked from 0 (no risk) to 5 (extreme).  
+floodrisk<-terra::resample(terra::rast(list.files("./Data/Hazards","flood_risk_UNEP_wgs84",full.names = T)),BaseRaster,method="near")
+# Areas of heat stress were defined as having thermal heat stress (THI, projected for 2030 under an 8.5 RCP scenario) (see Thornton et al., 2021).  
+thi<-terra::resample(terra::rast(list.files("./Data/Hazards","thi_max_2030_rcp85",full.names = T)),BaseRaster,method="bilinear")
+
+Hazards<-c(rain_cv,drydays,floodrisk,thi)
+names(Hazards)<-c("rain_cv","drydays","floodrisk","thi")
+Hazards<-terra::mask(Hazards,CGIAR_countries2)
+```
+
+*Raw Hazards*
+```{r plot raw hazards, echo =F}
+renderPlot({terra::plot(mask(Hazards,CGIAR_countries2),
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                        cex.main = input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F)
+          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  },height=Plot.Height, width=Plot.Width)
+```
+
+```{r Hazards - create classification function}
+ClassFun<-function(Data,T1,T2,Name){
+  if(!(is.null(T1)|is.null(T2))){
+    Data[which(Data[]<T1)]<-NA
+    Data[which(Data[]>=T2)]<-0
+    Data[which(Data[]>=T1 & Data[]<T2)]<-1
+  }else{
+    Data[which(Data[]<T1)]<-NA
+    Data[which(!is.na(Data[]))]<-0
+  }
+  names(Data) <- Name
+  return(Data)
+}
+
+```
+
+```{r Hazards - classify rainfall cv}
+rain_cv_class<-reactive({
+  ClassFun(Data=Hazards$rain_cv,T1=input$Hazards.CV.High,T2=input$Hazards.CV.Ex,Name="rain_cv")
+})
+```
+
+```{r Hazards - classify THI}
+thi_class<-reactive({
+  ClassFun(Data=Hazards$thi,T1=input$Hazards.Thi,T2=NULL,Name="thi")
+})
+```
+
+```{r Hazards - classify drydays}
+drydays_class<-reactive({
+  ClassFun(Data=Hazards$drydays,T1=input$Hazards.Drydays,T2=NULL,Name="drydays")
+})
+```
+
+```{r Hazards - classify floodrisk}
+floodrisk_class<-reactive({
+  ClassFun(Data=Hazards$floodrisk,T1=input$Hazards.Floodrisk,T2=NULL,Name="floodrisk")
+})
+```
+
+```{r stack hazard classes}
+Hazards_Class<-reactive({c(rain_cv_class(),thi_class(),drydays_class(),floodrisk_class())})
+```
+
+*Classified Hazards*
+```{r plot hazards, echo=F}
+renderPlot({
+      terra::plot(x=Hazards_Class(),
+                  pax=list(cex.axis=input$TextSize),
+                  plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                  cex.main=input$TextSize,
+                  axes = F,
+                  frame.plot= F)
+      terra::plot(ExtractBy(),border=input$BorderCol, add=T)
+  },height=Plot.Height, width=Plot.Width)
+
+```
+
+```{r Hazards - Combine Classes}
+ClassifyHazards<-function(Data,Threshold,Mask=NULL){
+  
+  if(!is.null(Mask)){ Data<-mask(Data,Mask)}
+  
+  # Number of hazards per cell
+  Data.N<- terra::app(Data,fun=function(x){sum(!is.na(x))})
+
+  #Reclassify values to create a binary sequence when summed
+  # Finding strange results for subst for the below, so went back to basics for rain_cv
+  X<-Data$rain_cv
+  
+  # HCV and ExCV where CV is the only hazard
+  X[which(X[]==1)]<-10 # High
+  X[which(X[]==0)]<-1 # Extreme
+  
+  # CV where >1 hazard is present
+  X[which(Data.N[]>1 & !is.na(X[]))]<-100
+  Data.N[which(Data.N[]==0)]<-NA
+  
+  Data$rain_cv<-X
+  
+  Data$thi<-subst(Data$thi,0,1000)
+  Data$drydays<-subst(Data$drydays,0,10000)
+  Data$floodrisk<-subst(Data$floodrisk,0,100000)
+  # Sum layers to create sequence
+  Data<- terra::app(Data, sum,na.rm=T)
+  
+  # Translate binary sequence to label
+  labels<-rev(c("ExCV","HCV","CV","Thi","D","F"))
+  values<-unique(as.vector(Data))
+  X<-unlist(lapply(str_locate_all(str_pad(values, length(labels), pad = "0"),"1"),FUN=function(X){
+    paste(rev(labels[unlist(X[,1])]),collapse="+")
+    }))
+  (labels<-data.table(values=values,labels=X)[order(values)][!is.na(values)][,N:=0:(.N-1)])
+  
+  # Recode raster to integer values and add labels
+  Data<-subst(Data,labels[,values],labels[,N])
+  
+  # Remove factors below threshold
+  X<- table(Data[])
+  X<-100*X/sum(X) 
+  
+  if(!is.null(Threshold)){
+    Remove<-as.numeric(names(X[X<Threshold]))
+    Data2<-copy(Data)
+
+    if(length(X)>0){
+      Keep<-as.numeric(names(X[X>=Threshold]))
+  
+      Data2<-subst(Data2,Remove,NA)
+      Data2<-subst(Data2,Keep,0:(length(Keep)-1))
+      
+      levels(Data2)<-labels[!N %in% Remove][,N:=0:(length(Keep)-1)][,list(N,labels)]
+
+    }
+  
+
+    levels(Data)<-labels[,list(N,labels)]
+  
+    X<-c(Data,Data2,Data.N)
+    names(X)<-c("Complete","Subset","N.Hazards")
+
+  }else{
+    levels(Data)<-labels[,list(N,labels)]
+    X<-c(Data,Data.N)
+    names(X)<-c("Complete","N.Hazards")
+
+  }
+      return(X)
+}
+
+Hazards_Class2<-reactive({
+  ClassifyHazards(Data=Hazards_Class(),Threshold=NULL,Mask=NULL)
+})
+```
+
+*Hazard Classes*
+```{r Hazards - Plot Combined Classes,echo=F}
+
+renderPlot({
+  terra::plot(Hazards_Class2()$Complete,
+       col=viridis(n=nrow(terra::cats(Hazards_Class2()$Complete)[[1]]),option = input$Palette,direction = 1),
+       maxcell=input$MaxPixels,
+       pax=list(cex.axis=input$TextSize),
+       plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+       cex.main=input$TextSize,
+        axes = F,
+        frame.plot= F)
+  terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+},height=Plot.Height, width=Plot.Width)
+```
+*Number of Hazards*
+```{r Hazards - Plot number of Hazards,echo=F}
+renderPlot({
+plot(Hazards_Class2()$N.Hazards,
+     col=viridis(n=nrow(terra::cats(Hazards_Class2()$Complete)[[1]]),option = input$Palette,direction = 1),
+     maxcell=input$MaxPixels,
+     pax=list(cex.axis=input$TextSize),
+     plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+     cex.main=input$TextSize,
+    axes = F,
+    frame.plot= F)
+},height=Plot.Height, width=Plot.Width)
+
+```
+
+
+##### Mask Hazards by Poverty 
+```{r Hazards - Poverty mask}
+Hazards_Class2_Masked<-reactive({
+  if(input$Param.Pov.1=="Yes"){
+  terra::mask(Hazards_Class2(),poverty_class())
+  }else{
+    Hazards_Class2()
+  }
+  })
+```
+
+```{r Hazards - Plot Masked Combined Classes,echo=F}
+renderPlot({
+  terra::plot(Hazards_Class2_Masked()$Complete,
+       col=viridis(n=nrow(terra::cats(Hazards_Class2_Masked()$Complete)[[1]]),option = input$Palette,direction = 1),
+       maxcell=input$MaxPixels,
+       pax=list(cex.axis=input$TextSize),
+       plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+       cex.main=input$TextSize,
+       axes = F,
+       frame.plot= F)
+  terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+},height=Plot.Height, width=Plot.Width)
+```
+
+```{r Hazards - calculate global area of hazards}
+Hazards_Class2_Masked2<-reactive({
+    terra::mask(Hazards_Class2_Masked()$Complete,LPS_Suitable)
+  })
+
+HazardAreas<-reactive({
+  data.table(terra::zonal(CellSize.km,Hazards_Class2_Masked2(),fun=sum,na.rm=T))[order(area,decreasing = T)] 
+  #is area in Km2? should we add units to the table?
+})
+```
+
+```{r Hazards - areas data.table, echo=F}
+  renderDT({
+    datatable(HazardAreas(),
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
+  })
+```
+
+##### Exposure
+```{r Exposure - read in datasets}
+# note vop, ruralpop and pasturearea are from cell5m so do not require resampling
+
+# unit of vop is 100 USD
+vop<-terra::rast(list.files("./Data/Exposure","cell5m_livestock_vop",full.names = T))
+vop<-terra::resample(vop,BaseRaster,method="near")
+
+ruralpop<-terra::rast(list.files("./Data/Exposure","cell5m_ruralpop_2020_v3",full.names = T))
+ruralpop<-terra::resample(ruralpop,BaseRaster,method="near")
+
+pasturearea<-terra::rast(list.files("./Data/Exposure","Pasture_area",full.names = T))
+pasturearea<-terra::resample(pasturearea,BaseRaster,method="near")
+
+TLU2<-TLU/terra::cellSize(TLU,unit="km")
+TLU2<-terra::resample(TLU2,BaseRaster,method="cubic")
+TLU2<-TLU2*CellSize.km
+
+Exposure<-c(vop,ruralpop,pasturearea,TLU2)
+names(Exposure)<-c("vop","ruralpop","pasturearea","TLU")
+```
+
+*Exposure raw*
+```{r Exposure Raw - plot}
+ExposureRaw<-c(log10(vop),log10(ruralpop),pasturearea,log(TLU2))
+names(ExposureRaw)<-c("log10(vop)","log10(ruralpop)","pasturearea","log10(TLU)")
+
+renderPlot({
+plot(ExposureRaw,
+     maxcell=input$MaxPixels,
+     pax=list(cex.axis=input$TextSize),
+      col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+     plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+     cex.main=input$TextSize,
+    axes = F,
+    frame.plot= F)
+},height=Plot.Height, width=Plot.Width)
+```
+
+Mask exposure by poverty greater than `r reactive({input$Poverty.Low})` %.
+```{r Exposure - mask by poverty}
+Exposure_masked<-reactive({
+  if(input$Param.Pov.3=="Yes"){
+   terra::mask(Exposure,poverty_class())
+  }else{
+    Exposure
+  }
+  })
+```
+
+*Exposure masked by poverty*
+```{r Exposure - plot}
+Exposure_masked_log<-reactive({
+  if(input$Param.Pov.3=="Yes"){
+   terra::mask(ExposureRaw,poverty_class())
+  }else{
+    ExposureRaw
+  }
+})
+
+renderPlot({
+plot(Exposure_masked_log(),
+     maxcell=input$MaxPixels,
+     pax=list(cex.axis=input$TextSize),
+      col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+     plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+     cex.main=input$TextSize,
+    axes = F,
+    frame.plot= F)
+},height=Plot.Height, width=Plot.Width)
+
+```
+
+#### Results{.tabset .tabset-fade .tabset-pills}
+:::: {style="display: flex;"}
+::: {}
+```{r  GxHxE choose fill,echo=F}
+  selectInput(inputId="HE.Fill", 
+              label="Choose fill variable",
+              choices = c("Hazard","Geography","Production System"),
+              selected="Hazard", 
+              multiple = F,
+              width="200px")
+```
+:::
+:::{}
+```{r  GxHxE order variable,echo=F}
+  selectInput(inputId="HE.Order", 
+              label="Choose order variable",
+              choices = c("vop","ruralpop","pasturearea","TLU"),
+              selected="vop", 
+              multiple = F,
+              width="200px")
+```
+:::
+::::
+
+##### Geography {.tabset .tabset-fade .tabset-pills}
+###### Analysis
+Mask exposure by selected geography:
+```{r GxHxE Mask Exposure by geography}
+Hazards_Class2_Masked2<-reactive({
+  terra::mask(Hazards_Class2_Masked()$Complete,ExtractBy())
+})
+```
+
+```{GxHxE Plot Masked Hazards,echo=F}
+renderPlot({
+  terra::plot(Hazards_Class2_Masked2(),
+       col=viridis(n=nrow(terra::cats(Hazards_Class2_Masked2())[[1]]),option = input$Palette,direction = 1),
+       maxcell=input$MaxPixels,
+       pax=list(cex.axis=input$TextSize),
+       plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+       cex.main=input$TextSize,
+        axes = F,
+        frame.plot= F)
+  terra::plot(ExtractBy(),add=T,border=input$BorderCol)
+},height=Plot.Height, width=Plot.Width)
+
+```
+
+```{r Extract exposure by geography x hazard class (GxHxE)}
+
+ExposureByGeog<-function(ExtractBy,Exposure,Hazards,Areas,CellSize.km){
+
+Exposure<-c(Exposure,CellSize.km)
+names(Exposure)[5]<-"HazardArea.km"
+  
+Exposure.Tab<-rbindlist(lapply(1:(length(ExtractBy)),FUN=function(i){
+  Geo_mask<-ExtractBy[i]
+  Exposure.s<-mask(Exposure,Geo_mask)
+
+  z<-data.table(terra::zonal(Exposure.s,Hazards, fun=sum,na.rm=T))
+  z[,ADMIN:=ExtractBy$ADMIN[i]][,Area:=Areas[i]]
+  z
+  
+}))
+
+setnames(Exposure.Tab,"Complete","Hazard_Class")
+  
+
+
+return(Exposure.Tab)
+}
+
+ExposureGeoData<-reactive({
+  ExposureByGeog(ExtractBy=ExtractBy(),
+                 Exposure=Exposure_masked(),
+                 Hazards=Hazards_Class2_Masked2(),
+                 Areas=ExtractBy.Area.km(),
+                 CellSize.km=CellSize.km)
+})
+```
+
+
+```{r Create GxHxE plot}
+GHE_Plotter<-function(Data,Fill,TextSize,Palette,LegPos,OrderBy,MaxRows,Alpha,CoordFlip,AreaWeight,FontFace,LegCols,PanelSpace){
+  X<-data.table::copy(Data)
+  X$OrderVar<-X[,..OrderBy]
+  
+  if(Fill=="Hazard"){
+    if(Data[,length(unique(ADMIN))]>MaxRows){
+      Keep<-X[,list(Total=sum(OrderVar,na.rm=T)),by=ADMIN][order(Total,decreasing = T)][1:MaxRows,ADMIN]
+      Data<-Data[ADMIN %in% Keep]
+      }
+    }else{
+      if(Data[,length(unique(Hazard_Class))]>MaxRows){
+        Keep<-X[,list(Total=sum(OrderVar,na.rm=T)),by=Hazard_Class][order(Total,decreasing = T)][1:MaxRows,Hazard_Class]
+        Data<-Data[Hazard_Class %in% Keep]
+        }
+    }
+  
+
+  Data<-melt(Data,id.vars=c("Hazard_Class","ADMIN","Area"))
+  
+  if(AreaWeight=="Yes"){
+    Data[,value:=value/Area]
+  }
+
+  if(Fill=="Hazard"){
+    Order<-Data[variable==OrderBy
+                       ][,list(value=sum(value,na.rm = T)),by=ADMIN
+                         ][order(value,decreasing = F),ADMIN]
+    Data[,ADMIN:=factor(ADMIN,levels=Order)]
+  }else{
+     Order<-Data[variable==OrderBy
+                       ][,list(value=sum(value,na.rm = T)),by=Hazard_Class
+                         ][order(value,decreasing = F),Hazard_Class]
+    Data[,Hazard_Class:=factor(Hazard_Class,levels=Order)]
+  }
+  
+  if(AreaWeight!="Yes"){
+    Data[variable!="vop",value:=value/10^6
+                 ][variable=="vop",value:=value/10^7
+                   ][variable=="vop",variable:="Total value of production ($ B)"
+                     ][variable=="ruralpop",variable:="Total rural population (M)"
+                       ][variable=="pasturearea",variable:="Total pasture area (M ha)"
+                         ][variable=="TLU",variable:="Total TLU (M)"]
+  }else{
+      Data[variable=="vop",variable:="Total value of production ($/km2)"
+                   ][variable=="ruralpop",variable:="Total rural population (number/km2)"
+                     ][variable=="pasturearea",variable:="Total pasture area (ha/km2)"
+                       ][variable=="TLU",variable:="Total TLU (number/km2)"]
+  }
+  
+
+  
+if(Fill=="Hazard"){
+  g<-ggplot(Data,aes(x=ADMIN,y=value,fill=Hazard_Class))
+}else{
+
+  g<-ggplot(Data,aes(x=Hazard_Class,y=value,fill=ADMIN))
+}
+
+g<-g+geom_bar(stat = "identity")+
+  scale_fill_viridis_d(option=Palette,alpha=Alpha)+
+  facet_grid(.~variable,scales="free")+
+  theme_bw()+
+  scale_y_continuous(expand=expansion(mult=c(0,0.05)))+
+  theme(axis.title = element_blank(),
+        legend.position = LegPos,
+        panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.spacing = unit(PanelSpace, "lines"),
+        text = element_text(size=TextSize*13,face=FontFace))+
+  labs(fill="Hazard Class")+
+  guides(guide_legend(ncol=LegCols))
+
+if(CoordFlip=="Yes"){
+  g<-g+coord_flip()
+}else{
+  g<-g+theme(axis.text.x = element_text(angle = 90))
+}
+
+return(g)
+}
+
+ExposureGeoPlot<-reactive({
+  GHE_Plotter(Data=ExposureGeoData(),
+                 Fill=input$HE.Fill,
+                 TextSize=input$TextSize,
+                 Palette=input$Palette,
+                 LegPos="bottom",
+                 OrderBy=input$HE.Order,
+                 MaxRows = input$Max.Bars,
+                 Alpha=input$Alpha,
+                 CoordFlip = input$CoordFlip,
+                 AreaWeight = input$AreaWeight,
+                 FontFace=input$FontFace,
+                 LegCols=input$LegCols,
+                 PanelSpace=input$PanelSpace)
+})
+
+```
+
+###### Results
+```{r Plot GxHxE, echo=F}
+renderPlot({ExposureGeoPlot()},height=Plot.Height, width=Plot.Width)
+```
+
+```{r GxHxE - data.table, echo=F}
+  renderDT({
+    datatable(ExposureGeoData(),
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All")))) %>% formatRound(columns =2:6,1)
+  })
+```
+
+```{r GxHxE plotly bars,echo=F,out.width="70%"}
+  renderPlotly({
+      ggplotly(ExposureGeoPlot())
+  })
+```
+
+##### Livestock Production Systems {.tabset .tabset-fade .tabset-pills}
+
+###### Analysis
+```{r extract exposure by rangeland x hazard class(RxHxE)}
+
+ExposureByRL<-function(LPS,Exposure,Hazards){
+  RLevels<-terra::cats(LPS)[[1]]$LPS
+  
+  Exposure.Tab<-rbindlist(lapply(1:(length(RLevels)),FUN=function(i){
+    LPS_mask<-copy(LPS)
+    LPS_mask[which(LPS_mask[]!=(i-1))]<-NA
+    Exposure.s<-mask(Exposure,LPS_mask)
+    z<-data.table(zonal(Exposure.s,Hazards, fun=sum,na.rm=T))
+    z[,LPS:=RLevels[i]]
+    z
+    }))
+  
+    setnames(Exposure.Tab,"Complete","Hazard_Class")
+    
+return(Exposure.Tab)
+}
+
+
+ExposureRLData<-reactive({
+  ExposureByRL(LPS=LPS_Suitable,
+               Exposure=Exposure_masked(),
+               Hazards=Hazards_Class2_Masked2())
+})
+
+```
+
+```{r create RxHxE plot}
+RHE_Plotter<-function(Data,Fill,TextSize,Palette,LegPos,OrderBy,Alpha,MaxRows,CoordFlip,AreaWeight,FontFace,LegCols,PanelSpace){
+  
+        X<-data.table::copy(Data)
+        X$OrderVar<-Data[,..OrderBy]
+  
+      if(Fill=="Hazard"){
+          if(Data[,length(unique(LPS))]>MaxRows){
+            Keep<-X[,list(Total=sum(OrderVar,na.rm=T)),by=LPS][order(Total,decreasing = T)][1:MaxRows,LPS]
+            Data<-Data[LPS %in% Keep]
+          }
+      }else{
+          if(Data[,length(unique(Hazard_Class))]>MaxRows){
+            Keep<-X[,list(Total=sum(OrderVar,na.rm=T)),by=Hazard_Class][order(Total,decreasing = T)][1:MaxRows,Hazard_Class]
+            Data<-Data[Hazard_Class %in% Keep]
+          }
+      }
+  
+
+  Data<-melt(Data,id.vars=c("Hazard_Class","LPS"))
+  
+    if(AreaWeight=="Yes"){
+    Data[,value:=value/Area]
+  }
+
+    if(Fill=="Hazard"){
+        Order<-Data[variable==OrderBy][,list(value=sum(value,na.rm=T)),by=LPS][order(value,decreasing = F),LPS]
+        Data[,LPS:=factor(LPS,levels=Order)]
+    }else{
+      Order<-Data[variable==OrderBy][,list(value=sum(value,na.rm=T)),by=Hazard_Class][order(value,decreasing = F),Hazard_Class]
+      Data[,Hazard_Class:=factor(Hazard_Class,levels=Order)]
+    }
+  
+  if(AreaWeight!="Yes"){
+    Data[variable!="vop",value:=value/10^6
+                 ][variable=="vop",value:=value/10^7
+                   ][variable=="vop",variable:="Total value of production ($ billion)"
+                     ][variable=="ruralpop",variable:="Total rural population (million)"
+                       ][variable=="pasturearea",variable:="Total pasture area (million ha)"
+                         ][variable=="TLU",variable:="Total TLU (million)"]
+  }else{
+      Data[variable=="vop",variable:="Total value of production ($/km2)"
+                   ][variable=="ruralpop",variable:="Total rural population (n/km2)"
+                     ][variable=="pasturearea",variable:="Total pasture area (ha/km2)"
+                       ][variable=="TLU",variable:="Total TLU (n/km2)"]
+  }
+  
+  if(Fill=="Hazard"){
+    g<-ggplot(Data,aes(x=LPS,y=value,fill=Hazard_Class))
+    }else{
+      g<-ggplot(Data,aes(x=Hazard_Class,y=value,fill=LPS))
+      }
+
+g<-g+geom_bar(stat = "identity")+
+  scale_fill_viridis_d(option=Palette,alpha=Alpha)+
+  facet_grid(.~variable,scales="free")+
+  theme_bw()+
+  scale_y_continuous(expand=expansion(mult=c(0,0.05)))+
+  theme(axis.title = element_blank(),
+        legend.position = LegPos,
+        panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.spacing = unit(PanelSpace, "lines"),
+        text = element_text(size=TextSize*13,face=FontFace))+
+  labs(fill="Hazard Class")+
+  guides(guide_legend(ncol=LegCols))
+
+if(CoordFlip=="Yes"){
+  g<-g+coord_flip()
+}else{
+  g<-g+theme(axis.text.x = element_text(angle = 90))
+}
+
+
+
+return(g)
+}
+
+ExposureRLPlot<-reactive({
+  RHE_Plotter(Data=ExposureRLData(),
+               Fill=input$HE.Fill,
+               TextSize=input$TextSize,
+               Palette=input$Palette,
+               LegPos="bottom",
+               OrderBy=input$HE.Order,
+               MaxRows = input$Max.Bars,
+               Alpha=input$Alpha,
+               CoordFlip=input$CoordFlip,
+              AreaWeight=input$AreaWeight,
+              FontFace=input$FontFace,
+              PanelSpace=input$PanelSpace,
+              LegCols = input$LegCols)
+})
+
+```
+
+###### Results
+```{r Plot RxHxE, echo=F}
+renderPlot({ExposureRLPlot()},height=Plot.Height, width=Plot.Width)
+```
+
+```{r RxHxE - data.table, echo=F}
+renderDT({
+  datatable(ExposureRLData(),
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All")))) %>% formatRound(columns =2:5,1)
+})
+```
+
+```{r RxHxE plotly bars,echo=F,out.width="70%"}
+  renderPlotly({
+      ggplotly(ExposureRLPlot())
+  })
+```
+
+### GHG Emissions & Soil Degradation {.tabset .tabset-fade .tabset-pills}
+
+**Dataset choices**
+
+:::: {style="display: flex;"}
+::: {}
+``` {r choose forest loss layer, echo=F}
+  selectInput(inputId="Forest.Loss.Layer", 
+             label= "Forest Loss Commodities", 
+             choices = c("Soy","Pasture","Both"), 
+             selected = "Both",
+             multiple = F,
+             width="200px")
+```
+:::
+::: {}
+``` {r choose soil carbon depth, echo=F}
+  selectInput(inputId="Carbon.Depth", 
+             label= "Soil Organic Carbon Depth (cm)", 
+             choices = c("0-30","0-100","0-200"), 
+             selected = "0-200",
+             multiple = F,
+             width="240px")
+```
+:::
+::: {}
+``` {r update 2010 direct emissions with FAO factor, echo=F}
+  selectInput(inputId="FAO.Update", 
+             label= "Update 2010 direct emissions with FAO factor?", 
+             choices = c("Yes","No"), 
+             selected = "Yes",
+             multiple = F,
+             width="350px")
+```
+:::
+:::{}
+``` {r choose SOC degradation threshold,echo=F} 
+  numericInput(inputId="SOC.Degradation.Threshold",
+             label="SOC Degredation Threshold (%)",
+             value=-10,
+             min=0,
+             max=-100,
+             step=1,
+             width="230px"
+             )
+```
+:::
+::::
+
+#### Datasets{.tabset .tabset-fade .tabset-pills}
+
+##### Direct Emissions
+
+Load FAOSTAT Emissions data:
+```{r Load FAO Emissions}
+FAO_Emissions<-data.table::fread("Data/FAO/Emissions_Totals_E_All_Data_NOFLAG.csv",encoding = "Latin-1")
+```
+*Note that the FAO data includes emissions from manure*  
+
+Subset and aggregate [FAO Emissions](https://www.fao.org/faostat/en/#data/GT) Stats:
+```{r Subset FAO Emissions,echo =T}
+FAO.Items<-c("Enteric Fermentation", "Manure applied to Soils", "Manure left on Pasture", "Manure Management")
+Elements<-c("Emissions (CO2eq) from CH4 (AR5)","Emissions (CO2eq) from N2O (AR5)")
+
+# Sum emissions from livestock across CH4 and N2O elements, calculate % change from 2000 to 2019, rename countries to match regions layer 
+FAO_Emissions<-FAO_Emissions[Item %in% FAO.Items & Source=="FAO TIER 1" & Element %in% Elements,list(Area,Item,Element,Unit,Y2000,Y2019)
+                             ][grep("CH4",Element),Element:="CH4"
+                               ][grep("N2O",Element),Element:="N2O"
+                                 ][,list(Y2000=sum(Y2000),Y2019=sum(Y2019)),by=list(Area,Element,Unit)
+                                   ][,Change:=Y2019/Y2000]
+```
+
+Harmonize CGIAR and FAO Emissions country names:
+```{r FAO Update Countries}
+
+# Make data table of FAO vs CGIAR names where they differ
+UpdateFAOCountries<-data.table(
+  FAO=c("Bolivia (Plurinational State of)",
+        "Iran (Islamic Republic of)",
+        "Syrian Arab Republic",
+        "Congo",
+        "Viet Nam",
+        "Lao People's Democratic Republic",
+        "Côte d'Ivoire",
+        "Brunei Darussalam",
+        "Venezuela (Bolivarian Republic of)",
+        "Bahamas",
+        "United Republic of Tanzania",
+        "Eswatini",
+        "Democratic People's Republic of Korea",
+        "China, Taiwan Province of"),
+  CGIAR=c("Bolivia",
+          "Iran",
+          "Syria",
+          "Republic of the Congo",
+          "Vietnam",
+          "Laos",
+          "Cote d'Ivoire",
+          "Brunei",
+          "Venezuela",
+          "The Bahamas",
+          "Tanzania",
+           "eSwatini",
+          "North Korea",
+          "Taiwan")
+  )
+
+# Match then update FAO names with CGIAR names
+N<-match(FAO_Emissions[,Area],UpdateFAOCountries[,FAO])
+FAO_Emissions[which(!is.na(N)),Area:=UpdateFAOCountries[N[!is.na(N)],CGIAR]]
+
+FAO_Emissions[grep("d'Ivoire",FAO_Emissions$Area),Area:="Cote d'Ivoire"]
+
+
+# Reshape data
+FAO_Emissions<-data.table::dcast(FAO_Emissions[,list(Area,Element,Change)],Area~Element,value.var = "Change")
+```
+
+Check for missing countries:
+```{r FAO Emissions Check for missing countries, echo = T}
+CGIAR_countries$ADMIN[!CGIAR_countries$ADMIN %in% FAO_Emissions[,Area]]
+```
+
+```{r FAO Emissions Change Show Data, echo = F}
+      datatable(FAO_Emissions,
+                caption="Proportional Increase in Livestock Emissions 2019 vs. 2010",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))  %>% formatRound(columns = c(2,3),3)
+
+```
+
+Add increase in Emissions Data to CGIAR_countries vectors & set NA values to 1 (no change):
+```{r Add FAO Emissions Data to CGIAR_countries}
+CGIAR_countries$CH4<-FAO_Emissions[match(CGIAR_countries$ADMIN,Area),CH4]
+CGIAR_countries$CH4[is.na(CGIAR_countries$CH4)]<-1
+CGIAR_countries$N2O<-FAO_Emissions[match(CGIAR_countries$ADMIN,Area),N2O]
+CGIAR_countries$N2O[is.na(CGIAR_countries$N2O)]<-1
+```
+
+Rasterize increase in livestock emissions:
+```{r Rasterize Increase in Livestock Emissions By Country}
+FAO.CH4.Change<-terra::rasterize(CGIAR_countries,BaseRaster,field="CH4")
+names(FAO.CH4.Change)<-"CH4"
+FAO.N2O.Change<-terra::rasterize(CGIAR_countries,BaseRaster,field="N2O")
+names(FAO.N2O.Change)<-"N2O"
+```
+
+**Proportional increase in livestock emissions 2000-2019 (FAOSTAT)**
+```{r Plot increase in emissions data, echo =F}
+renderPlot({terra::plot(mask(c(FAO.CH4.Change,FAO.N2O.Change),ExtractBy()),
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                        cex.main = input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F)
+          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  },height=Plot.Height, width=Plot.Width)
+
+```
+
+
+Load livestock emissions data from [Herrero et al. 2013](https://www.pnas.org/content/110/52/20888):
+```{r create Herrero livestock system filename table,echo=T}
+LS.Files<-data.table::fread("Data/LPS/LS Files.csv")
+LS.Files[,Meth:=paste0("^",Meth)][,N2O:=paste0("^",N2O)]
+```
+Detailed methods for Herrero et al. 2013 can be found [here](https://www.pnas.org/doi/suppl/10.1073/pnas.1308149110/suppl_file/sapp.pdf)
+
+```{r Load Herrero Data,echo=T}
+CH4.km2.00<-terra::resample(terra::rast(LS.Files[,list.files(".",Meth,recursive = T),by=Meth][,V1]), BaseRaster)*CellSize.km
+N2O.km2.00<-terra::resample(terra::rast(LS.Files[,list.files(".",N2O,recursive = T),by=N2O][,V1]), BaseRaster)*CellSize.km
+
+names(CH4.km2.00)<-LS.Files[,Choice]
+names(N2O.km2.00)<-LS.Files[,Choice]
+```
+
+Update Herrero 2000 data by applying proportion change in emissions between 2000-2019 as calculated from FAO data:
+```{r Update direct emission with FAO modifier}
+CH4.km2.19<-CH4.km2.00*FAO.CH4.Change
+N2O.km2.19<-N2O.km2.00*FAO.N2O.Change
+```
+
+```{r Choose direct emissions dataset}
+LS.CO2e<-reactive({
+  if(input$FAO.Update=="No"){
+    CH4.km2.00+N2O.km2.00
+  }else{
+    CH4.km2.19+N2O.km2.19
+  }
+})
+```
+
+**Direct emissions (units = log10(CO2eq) kg/km2/yr from Herrero 2000 multiplied by proportional change btw 2000-2019 as per FAO data**
+```{r Plot emissions data, echo =F}
+renderPlot({terra::plot(mask(log10(LS.CO2e()),ExtractBy()),
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        range=c(0,8.2),
+                        col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                        cex.main = input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F)
+          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  },height=Plot.Height, width=Plot.Width)
+
+```
+
+##### Forest Loss
+
+Load [UNEP-WCMC above- and below-ground terrestrial carbon storage](https://developers.google.com/earth-engine/datasets/catalog/WCMC_biomass_carbon_density_v1_0#description) or [NASA ORNL DAAC above- and below-ground biomass ](https://code.earthengine.google.com/?scriptPath=Examples:Datasets/NASA_ORNL_biomass_carbon_density_v1) data for 2010. *Note you will need to edit the markdown chunk below, changing `Choice<-"UNEP-WCMC"`  to `Choice<-"NASA ORNL DAAC"` if you want to use the NASA data.*
+
+```{r Load Carbonstock Data}
+Choice<-"UNEP-WCMC"
+
+  if(Choice=="NASA ORNL DAAC"){
+    AGB<-terra::rast("Data/Carbon_Stocks/agb5000.tif")
+    BGB<-terra::rast("Data/Carbon_Stocks/bgb5000.tif")
+    
+    CarbonStocks<-AGB+BGB
+    
+}else{
+  CarbonStocks<-terra::rast("Data/Carbon_Stocks/carbon_tonnes_per_ha5000.tif")
+}
+
+  # units = MgC/ha divide by 10^6 to get Mt
+  CarbonStocks<-terra::resample(CarbonStocks/10^6,BaseRaster)
+  names(CarbonStocks)<-"Biomass Mt/ha"
+```
+
+Convert carbon to carbon dioxide by multiplying by 3.67 to account for the atomic weight:
+```{r Convert tC to CO2 by multiplying by 3.67}
+CarbonStocks<-CarbonStocks*3.67
+```
+
+Load [Global Forest Watch datasets](https://glad.earthengine.app/view/global-forest-change):
+```{r Load Global Forest Watch Data}
+ForestCover09<-terra::resample(terra::rast("Data/GFW/forest_095000.tif"),BaseRaster)
+ForestCover09[which(ForestCover09[]<30)]<-NA
+```
+
+Mask biomass carbon stocks by forest cover:
+```{r Mask Biomass by forest cover}
+CarbonStocks.Masked<-terra::mask(CarbonStocks,ForestCover09)
+names(CarbonStocks.Masked)<-"Biomass Masked By Forest Mt/ha"
+
+```
+
+```{r plot forest cover & carbon stocks, echo =F}
+renderPlot({terra::plot(mask(c(ForestCover09,CarbonStocks,CarbonStocks.Masked),ExtractBy()),
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                        cex.main = input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F)
+  },height=Plot.Height, width=Plot.Width)
+```
+
+
+Load [WRI Pasture and Soy Deforestation Data](https://www.wri.org/research/estimating-role-seven-commodities-agriculture-linked-deforestation-oil-palm-soy-cattle):
+```{r Load WRI data,eval=F}
+WRI.Pasture.Loss <- terra::crop(terra::vect("Data/GCLD/pasture_loss.shp"),BaseRaster)
+WRI.Soy.Loss2<- terra::crop(terra::vect("Data/GCLD/soy_loss.shp"),BaseRaster)
+```
+*Note: Goldman et al. considered tree cover losses only in areas with at least 30 percent tree canopy cover for most analyses, as that matches the default statistics presented by Global Forest Watch. For the detailed soy and pasture analyses, they used a tree cover canopy density of 10 percent to better capture the conversion of less-dense woody vegetation in South American biomes such as the Chaco and Cerrado, which have faced widespread deforestation for commodity expansion. The tree cover loss dataset measures the first instance of complete removal of tree cover canopy at a 30-meter resolution for all woody vegetation over 5 meters in height.*  
+
+*Note: Note that WRI data has been pre-processed for the purpose of speeding up the markdown.*
+
+Calculate mean forest losses for period 2000-2015 (2015 being the most recent data available):
+```{r Commodity driven forest loss,eval=F}
+# Combine 2010 to 2015 forest losses (ha per polygon)
+WRIcols<-paste0("loss_",2001:2015)
+
+WRI.Pasture.Loss$mean_loss<-apply(as.data.frame(WRI.Pasture.Loss)[,WRIcols],1,mean,na.rm=T)
+WRI.Pasture.Loss$ha<-terra::expanse(WRI.Pasture.Loss,unit="ha")
+
+WRI.Soy.Loss2$mean_loss<-apply(as.data.frame(WRI.Soy.Loss2[,WRIcols]),1,mean,na.rm=T)
+```
+
+```{r Forest Loss Add Missing Countries to Soy,eval=F}
+# Soy does not contain countries with no pasture loss, use pasture loss as a template and transfer soy loss to this layer
+WRI.Soy.Loss<-copy(WRI.Pasture.Loss)
+WRI.Soy.Loss$mean_loss<-WRI.Soy.Loss2$mean_loss[match(WRI.Soy.Loss$gid_2,WRI.Soy.Loss2$gid_2)]
+
+# NAs create issues when summing Soy and Pasture FL data together, replace with 0s
+WRI.Soy.Loss$mean_loss[is.na(WRI.Soy.Loss$mean_loss)]<-0
+WRI.Pasture.Loss$mean_loss[is.na(WRI.Pasture.Loss$mean_loss)]<-0
+```
+
+Calculate mean CarbonStock per forest cell (MtCO2/ha) in each WRI polygon then add to WRI polygons:
+```{r CarbonStock per ha forest in WRI poly,eval=F}
+WRI.Pasture.CarbonStock<-terra::extract(CarbonStocks.Masked,WRI.Pasture.Loss,fun=mean,na.rm=T)
+WRI.Pasture.Loss$Forest.Carbon.ha<-WRI.Pasture.CarbonStock[,2]
+
+WRI.Soy.CarbonStock<-terra::extract(CarbonStocks.Masked,WRI.Soy.Loss,fun=mean,na.rm=T)
+WRI.Soy.Loss$Forest.Carbon.ha<-WRI.Soy.CarbonStock[,2]
+```
+
+Calculate Forest Carbon loss per WRI polygon (MtC/yr):
+```{r WRI Estimate Carbon Loss per area,eval=F}
+WRI.Pasture.Loss$CarbonLoss.ha.yr<-(WRI.Pasture.Loss$Forest.Carbon.ha*WRI.Pasture.Loss$mean_loss)/WRI.Pasture.Loss$ha
+WRI.Soy.Loss$CarbonLoss.ha.yr<-(WRI.Soy.Loss$Forest.Carbon.ha*WRI.Soy.Loss$mean_loss)/WRI.Soy.Loss$ha
+```
+
+Rasterize polygons:
+```{r Rasterize WRI polys,eval=F}
+WRI.Pasture.CarbonLoss.ha.yr<-terra::rasterize(WRI.Pasture.Loss,BaseRaster,field="CarbonLoss.ha.yr") 
+WRI.Pasture.CarbonLoss.pix.yr<-WRI.Pasture.CarbonLoss.ha.yr*terra::cellSize(WRI.Pasture.CarbonLoss.ha.yr,unit="ha")
+names(WRI.Pasture.CarbonLoss.pix.yr)<-"FL.CO2e.Mt"
+
+WRI.Soy.CarbonLoss.ha.yr<-terra::rasterize(WRI.Soy.Loss,BaseRaster,field="CarbonLoss.ha.yr")
+WRI.Soy.CarbonLoss.pix.yr<-WRI.Soy.CarbonLoss.ha.yr*terra::cellSize(WRI.Soy.CarbonLoss.ha.yr,unit="ha")
+names(WRI.Soy.CarbonLoss.pix.yr)<-"FL.CO2e.Mt"
+```
+Save outputs:
+```{r Save WRI rasters,eval=F}
+terra::writeRaster(WRI.Pasture.CarbonLoss.ha.yr,"Data/GCLD/WRI.Pasture.CarbonLoss.ha.yr.tif", overwrite=T)
+terra::writeRaster(WRI.Pasture.CarbonLoss.pix.yr,"Data/GCLD/WRI.Pasture.CarbonLoss.pix.yr.tif", overwrite=T)
+
+terra::writeRaster(WRI.Soy.CarbonLoss.ha.yr,"Data/GCLD/WRI.Soy.CarbonLoss.ha.yr.tif", overwrite=T)
+terra::writeRaster(WRI.Soy.CarbonLoss.pix.yr,"Data/GCLD/WRI.Soy.CarbonLoss.pix.yr.tif", overwrite=T)
+
+```
+
+```{r read WRI rasters 1,echo=F}
+WRI.Pasture.CarbonLoss.ha.yr<-terra::rast("Data/GCLD/WRI.Pasture.CarbonLoss.ha.yr.tif")
+WRI.Soy.CarbonLoss.ha.yr<-terra::rast("Data/GCLD/WRI.Soy.CarbonLoss.ha.yr.tif")
+
+WRI.Pasture.CarbonLoss.pix.yr<-terra::rast("Data/GCLD/WRI.Pasture.CarbonLoss.pix.yr.tif")
+WRI.Soy.CarbonLoss.pix.yr<-terra::rast("Data/GCLD/WRI.Soy.CarbonLoss.pix.yr.tif")
+```
+
+```{r Plot WRI pasture commodity loss per ha, echo=T}
+renderPlot({terra::plot(mask(WRI.Pasture.CarbonLoss.ha.yr,ExtractBy()),
+                        main="CO2e Mt/ha/yr emissions from forest loss due to pasture",
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                        cex.main= input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F)
+          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  },height=Plot.Height, width=Plot.Width)
+
+```
+
+```{r Plot WRI soy commodity loss per ha, echo=T}
+renderPlot({terra::plot(mask(WRI.Soy.CarbonLoss.ha.yr,ExtractBy()),
+                        main="CO2e Mt/ha/yr emissions from forest loss due to soy",
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        col=viridis(n=input$Ncolours,option =input$Palette),
+                        cex.main= input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F)
+          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  },height=Plot.Height, width=Plot.Width)
+```
+
+Combine Soy and Pasture Losses:
+```{r Combine Commodity Losses,eval=F}
+WRI.Both.CarbonLoss.ha.yr<-WRI.Pasture.CarbonLoss.ha.yr+WRI.Soy.CarbonLoss.ha.yr
+WRI.Both.CarbonLoss.pix.yr<-WRI.Pasture.CarbonLoss.pix.yr+WRI.Soy.CarbonLoss.pix.yr
+names(WRI.Both.CarbonLoss.pix.yr)<-"FL.CO2e.Mt"
+```
+Save outputs:
+```{r Save WRI combined rasters, eval=F}
+terra::writeRaster(WRI.Both.CarbonLoss.ha.yr,"Data/GCLD/WRI.Both.CarbonLoss.ha.yr.tif", overwrite=T)
+terra::writeRaster(WRI.Both.CarbonLoss.pix.yr,"Data/GCLD/WRI.Both.CarbonLoss.pix.yr.tif", overwrite=T)
+```
+
+```{r read WRI rasters 2,echo=F}
+WRI.Both.CarbonLoss.ha.yr<-terra::rast("Data/GCLD/WRI.Both.CarbonLoss.ha.yr.tif")
+WRI.Both.CarbonLoss.pix.yr<-terra::rast("Data/GCLD/WRI.Both.CarbonLoss.pix.yr.tif")
+```
+
+```{r Plot combined WRI commodity loss per ha, echo =T}
+renderPlot({terra::plot(mask(WRI.Both.CarbonLoss.ha.yr,ExtractBy()),
+                        main="CO2e Mt/ha emissions from forest loss due to pasture + soy",
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                        cex.main= input$TextSize*1.2,
+                        axes = F,
+                        frame.plot= F)
+          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  },height=Plot.Height, width=Plot.Width)
+```
+
+##### Soil Organic Carbon (SOC)
+Load  [Trends.Earth data](https://docs.trends.earth/en/latest/for_users/features/landdegradation.html#background-landdegradation) soil organic carbon percent change (2001-2015) data:
+*Units are %*
+```{r SOC -Load Trends.Earth SOC %, eval=T}
+SOC_pch2<-terra::resample(terra::rast("Data/TrendsEarth/soc_pch5000.tif"),BaseRaster)
+```
+
+```{r SOC -mask Trends.Earth SOC pch to LPS not in protected areas, eval=T}
+SOC_pch2<-terra::mask(terra::mask(SOC_pch2,LPS_Suitable),WDPA_rast,inverse=T)
+```
+
+```{r Plot Trends.Earth SOC pch Data, echo =F, out.width="100%", fig.asp = .5}
+renderPlot({
+  terra::plot(SOC_pch2,
+              main="Percent change in SOC 2001-15 (Trends Earth)",
+              pax=list(cex.axis=input$TextSize),
+              plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+              breaks=cuts(),
+              #col = viridis::viridis(length(cuts),option=input$Palette),
+              cex.main= input$TextSize*1.2,
+              axes = F,
+              frame.plot= F)
+  terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  },height=Plot.Height, width=Plot.Width)
+
+```
+
+```{r SOC - mask by poverty,echo=T}
+SOC.pch<-reactive({
+  if(input$Param.Pov.4=="Yes"){
+   terra::mask(SOC_pch2,poverty_class())
+  }else{
+    SOC_pch2
+  }
+  })
+```
+
+```{r Plot Trends.Earth SOC pch Data with poverty mask, echo =F, out.width="100%", fig.asp = .5}
+cuts <- reactive({
+  unique(quantile(SOC.pch()[],probs=seq(0,1,0.1),na.rm=T))
+})
+
+SOC.Plot<-reactive({terra::mask(SOC.pch(),CGIAR_countries2)})
+
+renderPlot({
+  terra::plot(SOC.Plot(),
+              main="Percent change in SOC 2001-15 (Trends Earth) masked by poverty",
+              pax=list(cex.axis=input$TextSize),
+              plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+              breaks=cuts(),
+              #col = viridis::viridis(length(cuts),option=input$Palette),
+              cex.main= input$TextSize*1.2,
+              axes = F,
+              frame.plot= F)
+  terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  },height=Plot.Height, width=Plot.Width)
+
+```
+
+#### Results {.tabset .tabset-fade .tabset-pills}
+
+:::: {style="display: flex;"}
+::: {}
+```{r CO2e table units, echo=F}
+  selectInput(inputId="Table.Unit", 
+             label= "CO2e unit", 
+             choices = c("Mg","Mt","kt"), 
+             selected = "Mt",
+             multiple = F,
+             width="200px")
+```
+:::
+:::{}
+```{r log combined raster, echo=F}
+  selectInput(inputId="DoLog", 
+             label= "Maps: Use log scale?", 
+             choices = c("Yes","No"), 
+             selected = "No",
+             multiple = F,
+             width="200px")
+```
+:::
+:::{}
+```{r add admin to raster, echo=F}
+  selectInput(inputId="AddAdmin", 
+             label= "Maps: Add admin boundaries?", 
+             choices = c("Yes","No"), 
+             selected = "Yes",
+             multiple = F,
+             width="240px")
+```
+:::
+::: {}
+```{r CO2e Bar Fill, echo=F}
+  selectInput(inputId="Bar.Fill", 
+             label= "Bars: Fill variable", 
+             choices = c("Geography","Variable"), 
+             selected = "Variable",
+             multiple = F,
+             width="200px")
+```
+:::
+:::{}
+```{r bar plot bar width, echo=F}
+  numericInput(inputId="Bar.Width",
+             label="Bars: Bar width",
+             value=0.9,
+             min=0.1,
+             max=2,
+             step=0.1,
+             width="200px"
+             )
+           
+```
+:::
+:::{}
+```{r CO2e Bar Stack, echo=F}
+  selectInput(inputId="Bar.Stack", 
+             label= "Bars: Stack bars?", 
+             choices = c("No","Yes"), 
+             selected = "Yes",
+             multiple = F,
+             width="200px")
+```
+:::
+::::
+
+```{r Bar Xlab, echo = F}
+Xlab<-reactive({
+  if(input$AreaWeight=="No"){
+    paste0(input$Table.Unit," CO2e/yr")
+  }else{
+    paste0(input$Table.Unit," CO2e/yr/km2")  }
+})
+```
+
+```{r Create Forest Loss Layer, echo = F}
+Forest.Loss.Layer<-terra::rast(list.files(".","CarbonLoss.pix.yr.tif",recursive = T))
+names(Forest.Loss.Layer)<-paste0("LUC.",c("Soy.Pasture","Pasture","Soy"))
+```
+
+```{r Emissions - mask by poverty,echo=F}
+LS.CO2e_Forest.Loss.Layer<-reactive({
+  if(input$Param.Pov.2=="Yes"){
+   terra::mask(c(LS.CO2e()/10^9,Forest.Loss.Layer),poverty_class())
+  }else{
+   c(LS.CO2e()/10^9,Forest.Loss.Layer)
+  }
+  })
+```
+
+```{r Get direct emissions by country, echo=F}
+
+Combined.CO2e<-reactive({
+  data.table(terra::extract(x=LS.CO2e_Forest.Loss.Layer(),
+                            y=ExtractBy(),
+                            fun=sum,na.rm=T),
+             Area=round(ExtractBy.Area.km(),0))[,ADMIN:=Analysis.Level()
+                                                 ][,ID:=NULL
+                                                   ][,Total.CO2e:=All.livestock+LUC.Soy.Pasture]
+})
+```
+
+```{r ConvertUnits, echo=F}
+ConvertUnits<-function(Data,Unit){
+  Admin<-Data[,ADMIN]
+  Area<-Data[,Area]
+  Data<-Data[,!c("ADMIN","Area")]
+
+  
+  if(Unit=="Mg"){
+     Data<-Data*10^6
+  }
+  
+  if(Unit=="kt"){
+     Data<-Data*10^3
+  }
+  
+  Data<-data.table(Data,Area=Area,ADMIN=Admin)
+  
+  return(data.table(Data))
+}
+
+Combined.CO2e.DTab<-reactive({
+  ConvertUnits(Data=Combined.CO2e(),
+               Unit=input$Table.Unit)
+})
+
+```
+
+##### Emissions {.tabset .tabset-fade .tabset-pills}
+*If you're having a problem displaying the legend for resized maps. Try changing the `Legend position` option in the plotting parameters section above.*
+
+:::: {style="display: flex;"}
+::: {}
+```{r choose CO2 Bar variables, echo=F}
+  renderUI({
+    checkboxGroupInput(inputId="CO2.Column", 
+             label= "Choose variables to display in bar chart", 
+             choices = colnames(Combined.CO2e.DTab())[!colnames(Combined.CO2e.DTab()) %in% c("ADMIN")], 
+             selected = c("Total.CO2e"),
+             inline = T,
+             width="800px")
+    })
+```
+:::
+:::{}
+```{r CO2e Bar Order, echo=F}
+  renderUI({
+    selectInput(inputId="Bar.Order", 
+             label= "Choose order variable", 
+             choices = c(input$CO2.Column,"Sum"), 
+             selected = if(input$Bar.Stack=="Yes"){"Sum"}else{input$CO2.Column[1]},
+             multiple = F,
+             width="200px")
+  })
+```
+:::
+::::
+
+
+###### Geography (Bars)
+```{r prepare data for bar plot,echo=F}
+
+CO2BarPlotter<-function(Data,Palette,Variables,Bar.Fill,Bar.N,Bar.Width,Bar.Order,TextSize,Bar.Stack,Xlab,LegPos,CoordFlip,AreaWeight,FontFace){
+  
+    if(grepl("bottom",LegPos)){
+      LegPos<-"bottom"
+    }
+  
+  if(grepl("top",LegPos)){
+      LegPos<-"top"
+  }
+  
+  if(grepl("left",LegPos)){
+      LegPos<-"left"
+  }
+  
+  if(grepl("right",LegPos)){
+      LegPos<-"right"
+  }
+  
+    if(Bar.Order=="Sum"){
+      Order<-Data[,ADMIN][order(apply(Data[,..Variables],1,sum),decreasing = T)]
+    }else{
+      Order<-Data[,ADMIN][order(Data[,..Bar.Order],decreasing = T)]
+    }
+  
+    Data<-melt(Data,id.vars=c("ADMIN","Area"),measure.vars=Variables)
+    Data[,ADMIN:=factor(ADMIN,levels=rev(Order))]
+    
+    if(AreaWeight=="Yes"){
+      Data[,value:=value/Area]
+    }
+    
+    if(length(Order)>Bar.N){
+      Data<-Data[ADMIN %in% Order[1:Bar.N]]
+    }
+    
+
+     if(Bar.Fill=="Geography"){
+       g<-ggplot(Data,aes(x=variable,y=value,fill=ADMIN))
+     }else{
+       g<-ggplot(Data,aes(x=ADMIN,y=value,fill=variable))
+     }
+     
+    if(Bar.Stack=="No"){
+     g<-g+geom_bar(stat="identity",position = position_dodge(width=Bar.Width))
+    }else{
+     g<-g+geom_bar(stat="identity")
+    }
+     
+     g<-g+scale_fill_viridis(option=Palette,discrete=T)+
+     theme_bw()+
+     theme(text = element_text(size=round(13*TextSize,0),face=FontFace),
+           axis.title.y = element_blank(),
+           legend.position = LegPos)+
+       labs(y=Xlab,fill="Emission Source")
+     
+     
+  if(CoordFlip=="Yes"){
+    g<-g+coord_flip()
+  }else{
+   g<-g+theme(axis.text.x = element_text(angle=90))
+  }
+       
+     return(g)
+}
+
+BarPlot<-reactive({
+      CO2BarPlotter(Data=Combined.CO2e.DTab(),
+                  Palette=input$Palette,
+                  Variables=input$CO2.Column,
+                  Bar.Fill=input$Bar.Fill,
+                  Bar.N=input$Max.Bars,
+                  Bar.Width=input$Bar.Width,
+                  Bar.Order=input$Bar.Order,
+                  TextSize=input$TextSize,
+                  Bar.Stack=input$Bar.Stack,
+                  Xlab=Xlab(),
+                  LegPos = input$LegPos,
+                  CoordFlip=input$CoordFlip,
+                  AreaWeight=input$AreaWeight,
+                  FontFace=input$FontFace)
+})
+```
+
+```{r CO2 plot bars,echo=F}
+  renderPlot({
+      BarPlot()
+  },height=Plot.Height, width=Plot.Width)
+```
+
+```{r View Combined Data, echo = F}
+  renderDT({
+      datatable(Combined.CO2e.DTab()[,c("ADMIN",colnames(Combined.CO2e.DTab())[colnames(Combined.CO2e.DTab())!="ADMIN"])],
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All")))) %>% formatRound(columns = 2:ncol(Combined.CO2e.DTab()),2)
+  }) 
+      
+```
+
+```{r CO2 plotly bars,echo=F,out.width="70%"}
+  renderPlotly({
+      ggplotly(BarPlot())
+  })
+```
+
+###### Livestock System (Bars)
+Here analysis is aggregated across all regions or countries selected. It is possible to subset to an individual country by selecting the `Admin1` level of spatial aggregation and choosing your focal country.
+```{r extract by livestock system, echo = F}
+
+ExtractByLSS<-function(ForestLoss,DirectEmission,Livestock,ExtractBy,LPS){
+  A<-data.table(terra::zonal(mask(c(DirectEmission/10^9,
+                                    terra::cellSize(LPS,unit="km"),
+                                    ForestLoss
+                                   ),ExtractBy),
+                             mask(LPS,ExtractBy),fun=sum,na.rm=T))
+
+  if(!is.null(Livestock)){
+    B<-data.table(terra::zonal(
+      terra::mask(Livestock,ExtractBy),
+      terra::mask(resample(LPS,Livestock,method="near"),ExtractBy),
+      fun=sum,na.rm=T))[,!"OID"]
+    
+    C<-cbind(A,B)
+  }else{
+  C<-A
+  }
+  
+  setnames(C,c("area","LPS"),c("Area","ADMIN"))
+  
+  colnames(C)<-gsub(" ",".",colnames(C))
+  C[,Total.CO2e:=All.livestock+LUC.Soy.Pasture]
+  
+  return(C)
+
+}
+
+
+LS.LPS2<-reactive({
+  ExtractByLSS(ForestLoss=Forest.Loss.Layer,
+             DirectEmission=LS.CO2e(),
+             Livestock=NULL,
+            ExtractBy=ExtractBy(),
+            LPS=LPS_Suitable)
+})
+             
+
+```
+```{r  CO2e & LU by rangeland prepare plot data, echo =F}
+LS.LPS<-reactive({
+  ConvertUnits(Data=LS.LPS2(),
+                    Unit=input$Table.Unit)
+})
+
+
+```
+
+
+```{r CO2e & LU by rangeland prepare plot,echo=F}
+
+BarPlot.LPS<-reactive({
+      CO2BarPlotter(Data=LS.LPS(),
+                  Palette=input$Palette,
+                  Variables=input$CO2.Column,
+                  Bar.Fill=input$Bar.Fill,
+                  Bar.N=input$Max.Bars,
+                  Bar.Width=input$Bar.Widt,
+                  Bar.Order=input$Bar.Order,
+                  TextSize=input$TextSize,
+                  Bar.Stack=input$Bar.Stack,
+                  Xlab=Xlab(),
+                  LegPos = input$LegPos,
+                  AreaWeight = input$AreaWeight,
+                  CoordFlip=input$CoordFlip,
+                  FontFace = input$FontFace)
+})
+```
+
+
+```{r CO2e & LU by rangeland plot,echo=F}
+  renderPlot({
+      BarPlot.LPS()
+  },height=Plot.Height, width=Plot.Width)
+```
+
+```{r CO2e & LU by rangeland type data.table, echo=F}
+  renderDT({
+      datatable(LS.LPS(),
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All")))) %>% formatRound(columns = 2:12,c(3,3,rep(0,8)))
+  }) 
+```
+
+```{r CO2e & LU by rangeland type plotly bars,echo=F,out.width="70%"}
+  renderPlotly({
+      ggplotly(BarPlot.LPS())
+  })
+```
+
+###### Admin Areas (Map)
+```{r combine geographies and outcomes, echo =F}
+FinalPlot<-reactive({cbind(ExtractBy(),Combined.CO2e.DTab())})
+```
+
+```{r choose admin plot variable, echo=F}
+  renderUI({
+    selectInput(inputId="CO2e.AdminPlot.Var", 
+             label= "Choose Variable", 
+             choices = colnames(Combined.CO2e.DTab()), 
+             selected = "Total.CO2e",
+             multiple = T,
+             width="240px")
+  })
+```
+
+```{r Plot outcomes, echo=F}
+renderPlot({
+      terra::plot(FinalPlot(),
+        input$CO2e.AdminPlot.Var,
+        type="continuous",
+        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+        col=viridis::viridis(n=input$Ncolours,option=input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+        border=input$BorderCol,
+        pax=list(cex.axis=input$TextSize),
+        cex.main=input$TextSize,
+        axes = F,
+        frame.plot= F)
+  },height=Plot.Height, width=Plot.Width)
+```
+
+###### Raster (Map)
+:::: {style="display: flex;"}
+::: {}
+```{r mask combined CO2 raster, echo=F}
+  selectInput(inputId="MaskCO2eRaster", 
+             label= "Mask map to rangeland and non-protected areas?", 
+             choices = c("Yes","No"), 
+             selected = "No",
+             multiple = F,
+             width="400px")
+```
+:::
+:::{}
+
+```{r calculate combined raster, echo=F}
+
+RasterAdd<-function(DE,FL,Mask,Unit,DoLog,DoMask,LPS,PAs,Area){
+
+
+Data<-c(DE,FL)
+Data$Total.CO2e<-Data$LUC.Soy.Pasture+Data$`All livestock`
+
+ Data<-subst(Data,0,as.numeric(NA))
+
+  if(Unit=="Mg"){
+     Data<-Data*10^6
+  }
+  
+  if(Unit=="kt"){
+     Data<-Data*10^3
+  }
+
+if(DoLog=="Yes"){
+  Data<-log10(Data)
+}
+
+Data<-terra::mask(terra::crop(Data,Mask),Mask)
+  
+  if(DoMask=="Yes"){
+    LPS<-terra::mask(terra::crop(LPS,Mask),Mask)
+    PAs<-terra::mask(terra::crop(PAs,Mask),Mask)
+    LPS.PAs<-mask(LPS,PAs,inverse=T)
+    Data<-terra::mask(Data,LPS.PAs)
+
+  }
+  
+  return(Data)
+}
+
+SOC.RasterPlot<-reactive({
+  RasterAdd(DE=LS.CO2e()/10^9,
+            FL=Forest.Loss.Layer,
+            Mask=ExtractBy(),
+            Unit=input$Table.Unit,
+            DoLog=input$DoLog,
+            DoMask = input$MaskCO2eRaster,
+            LPS = LPS_Suitable,
+            PAs = WDPA_rast,
+            Area=CellSize.km())
+})
+
+```
+
+```{r Choose CO2e Raster Layers to plot, echo=F}
+  renderUI({
+    selectInput(inputId="CO2e.AdminPlot.Var", 
+             label= "Choose Variable", 
+             choices = names(SOC.RasterPlot()), 
+             selected = "Total.CO2e",
+             multiple = F,
+             width="240px")
+  })
+```
+:::
+::::
+
+```{r Plot combined raster, echo=F}
+
+renderPlot({
+      terra::plot(x=SOC.RasterPlot()[[input$CO2e.AdminPlot.Var]],
+                  type="continuous",
+                  col=viridis::viridis(n=input$Ncolours,option=input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                  pax=list(cex.axis=input$TextSize),
+                  plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                  cex.main=input$TextSize,
+                  axes = F,
+                  frame.plot= F)
+      if(input$AddAdmin=="Yes"){
+      terra::plot(ExtractBy(),border=input$BorderCol, add=T)
+      }
+  },height=Plot.Height, width=Plot.Width)
+```
+
+##### SOC in LPS  {.tabset .tabset-fade .tabset-pills}
+
+```{r calculate areas of LPS,echo=F}
+ # Note LPS are being masked to non-protected areas
+
+  LPS_Suitable_Area<-reactive({
+    terra::zonal(terra::mask(mask(CellSize.km,LPS_Suitable),ExtractBy()),
+                 terra::mask(terra::mask(LPS_Suitable,ExtractBy()),WDPA_rast,inverse=T),
+                 fun=sum,
+                 na.rm=T)[,"area"]
+  })
+
+
+  LPS_Suitable_Area_Geog<-reactive({
+    terra::extract(
+      terra::mask(terra::mask(mask(CellSize.km,LPS_Suitable),ExtractBy()),WDPA_rast,inverse=T),
+      ExtractBy(),
+      fun=sum,
+      na.rm=T)[,"area"]
+  })
+
+```
+
+###### Geography (Bars)
+Variables: **soc_pch** = % change in soil organic carbon; **soc_pch.sum** = sum of soc_pch pixels; **soc_pch.mean** = mean of soc_pch pixels; **soc_pch.median** = median of soc_pch pixels; **soc_pch.max** = maximum of soc_pch pixels; **soc_pch.min** = minimum of soc_pch pixels; **soc_pch.neg.prop** = proportion of soc_pch pixels showing decline; **soc_pch.neg.mean** = mean of soc_pch pixels that are declining; **soc_pch.neg.median** = median of soc_pch pixels that are declining; and **soc_pch.neg.area** = area (km2) of soc_pch pixels that are declining.
+
+```{r extract data from SOC pch,echo=F}
+ExtractFun<-function(Data,na.rm,MinT){
+  c(sum=sum(Data,na.rm=na.rm),
+    mean=mean(Data,na.rm=na.rm),
+    median=median(Data,na.rm=na.rm),
+    max=max(Data,na.rm=na.rm),
+    min=min(Data,na.rm=na.rm),
+    neg.prop=sum(Data[!is.na(Data)]<=MinT)/length(Data[!is.na(Data)]),
+    neg.mean=mean(Data[Data<=MinT],na.rm=na.rm),
+    neg.median=median(Data[Data<=MinT],na.rm=na.rm)
+    )
+  }
+
+
+SOC.pch.Tab<-reactive({
+  data.table(ADMIN=Analysis.Level(),
+             LPS.Area.km2=round(LPS_Suitable_Area_Geog(),0),
+             terra::extract(SOC.pch(),ExtractBy(),fun=ExtractFun,na.rm=T,MinT=input$SOC.Degradation.Threshold))[,ID:=NULL][,soc_pch.neg.area:=soc_pch.neg.prop*LPS.Area.km2]
+})
+```
+
+:::: {style="display: flex;"}
+::: {}
+```{r choose SOC Bar variables, echo=F}
+  renderUI({
+    checkboxGroupInput(inputId="SOC.Column", 
+             label= "Choose variables to display in bar chart", 
+             choices = colnames(SOC.pch.Tab())[!colnames(SOC.pch.Tab()) %in% c("ADMIN")], 
+             selected = "soc_pch.neg.area",
+             inline = T,
+             width="800px")
+    })
+```
+:::
+:::{}
+```{r SOC Bar Order, echo=F}
+  renderUI({
+    selectInput(inputId="SOC.Bar.Order", 
+             label= "Choose order variable", 
+             choices = c(input$SOC.Column,"Sum"), 
+             selected = if(input$Bar.Stack=="Yes"){"Sum"}else{input$SOC.Column[1]},
+             multiple = F,
+             width="200px")
+  })
+```
+:::
+:::{}
+```{r SOC invert bar axis, echo=F}
+    selectInput(inputId="SOC.Bar.Invert", 
+             label= "Reverse variable sign?", 
+             choices = c("Yes","No"), 
+             selected = "No",
+             multiple = F,
+             width="200px")
+```
+:::
+::::
+
+```{r prepare data for SOC bar plot,echo=F,eval=T}
+
+SOCBarPlotter<-function(Data,Palette,Variables,Bar.Fill,Bar.N,Bar.Width,Bar.Order,TextSize,Bar.Stack,InvertX,CoordFlip,FontFace){
+    Data<-data.frame(Data)
+    if(InvertX=="Yes"){
+      Data[,Variables]<- -Data[,Variables]
+    }
+    
+    Data<-data.table(Data)
+  
+    if(Bar.Order=="Sum"){
+      Order<-Data[,ADMIN][order(apply(Data[,..Variables],1,sum),decreasing = T)]
+    }else{
+      Order<-Data[,ADMIN][order(Data[,..Bar.Order],decreasing = T)]
+    }
+  
+    Data<-melt(Data,id.vars=c("ADMIN","LPS.Area.km2"),measure.vars=Variables)
+    Data[,ADMIN:=factor(ADMIN,levels=rev(Order))]
+    if(length(Order)>Bar.N){
+      Data<-Data[ADMIN %in% Order[1:Bar.N]]
+    }
+
+     if(Bar.Fill=="Geography"){
+       g<-ggplot(Data,aes(x=variable,y=value,fill=ADMIN))
+     }else{
+       g<-ggplot(Data,aes(x=ADMIN,y=value,fill=variable))
+     }
+     
+    if(Bar.Stack=="No"){
+     g<-g+geom_bar(stat="identity",position = position_dodge(width=Bar.Width))
+    }else{
+     g<-g+geom_bar(stat="identity")
+    }
+     
+     g<-g+scale_fill_viridis(option=Palette,discrete=T)+
+     theme_bw()+
+     theme(text = element_text(size=round(13*TextSize,0),face=input$FontFace),
+           axis.title.y = element_blank())
+     
+     if(CoordFlip=="Yes"){
+       g<-g+coord_flip()
+     }
+     
+     return(g)
+}
+
+SOC.BarPlot<-reactive({
+      SOCBarPlotter(Data=SOC.pch.Tab(),
+                  Palette=input$Palette,
+                  Variables=input$SOC.Column,
+                  Bar.Fill=input$Bar.Fill,
+                  Bar.N=input$Max.Bars,
+                  Bar.Width=input$Bar.Width,
+                  Bar.Order=input$SOC.Bar.Order,
+                  TextSize=input$TextSize,
+                  Bar.Stack=input$Bar.Stack,
+                  InvertX=input$SOC.Bar.Invert,
+                  CoordFlip=input$CoordFlip)
+})
+```
+
+```{r SOC plot bars,echo=F,eval=T}
+  renderPlot({
+      SOC.BarPlot()
+  },height=Plot.Height, width=Plot.Width)
+```
+
+```{r View SOC pch Data, echo = F}
+  renderDT({
+      datatable(SOC.pch.Tab()[order(soc_pch.neg.area,decreasing = T)],
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))  %>% formatRound(columns = c(2:11),c(0,rep(3,9),0))
+  }) 
+```
+
+
+```{r SOC plotly bars,echo=F,out.width="70%"}
+  renderPlotly({
+      ggplotly(SOC.BarPlot())
+  })
+```
+
+###### Livestock System (Bars)
+```{r extract SOC by livestock system, echo = F}
+
+SOC_ExtractByLPS<-function(LPS,SOC.pch,ExtractBy,CellSize.km,MinT){
+  
+  SOC.pch<-terra::mask(SOC.pch,ExtractBy)
+  LPS<-terra::mask(LPS,ExtractBy)
+  CellSize.km<-terra::mask(CellSize.km,ExtractBy)
+  
+  SOC.pch[SOC.pch>MinT]<-NA
+  CellSize.km<-mask(CellSize.km,SOC.pch)
+  
+  A<-data.table(terra::zonal(CellSize.km,LPS,fun=sum,na.rm=T))
+  
+  setnames(A,c("area"),c("soc_pch.neg.area"))
+  
+  A[,LPS:=factor(LPS,A[order(soc_pch.neg.area),LPS])]
+  A[,soc_pch.neg.area:=round(soc_pch.neg.area,0)]
+  return(A)
+}
+
+SOC.LPS2<-reactive({
+  SOC_ExtractByLPS(LPS=LPS_Suitable,
+                   SOC.pch=SOC.pch(),
+                   ExtractBy=ExtractBy(),
+                   CellSize.km=CellSize.km,
+                   MinT=input$SOC.Degradation.Threshold)
+})
+             
+```
+
+```{r Plot LPS SOC Data, echo = F}
+  renderPlot({
+     ggplot(SOC.LPS2(),aes(x=LPS,y=soc_pch.neg.area/10^6,fill=LPS))+
+    geom_bar(stat="identity")+
+     scale_fill_viridis(option=input$Palette,discrete=T)+
+     theme_bw()+
+     theme(text = element_text(size=round(13*input$TextSize,0),face=input$FontFace))+
+      coord_flip()+
+      labs(y="LPS area with declining SOC (million km2)",x="Livestock Production Systems (LPS)")
+  },height=Plot.Height, width=Plot.Width)
+
+```
+
+```{r View LPS SOC Data, echo = F}
+  renderDT({
+      datatable(SOC.LPS2(),
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
+  }) 
+```
+
+###### Map: % Change Raster
+:::: {style="display: flex;"}
+::: {}
+```{r SOC pch do classify, echo=F}
+  selectInput(inputId="SOC.pc.Classify", 
+             label= "Use intervals?", 
+             choices = c("Yes","No"), 
+             selected = "No",
+             multiple = F)
+```
+:::
+:::{}
+```{r SOC pch declining only, echo=F}
+  selectInput(inputId="SOC.pc.neg", 
+             label= "Show only declining pixels?", 
+             choices = c("Yes","No"), 
+             selected = "Yes",
+             multiple = F)
+```
+:::
+:::{}
+```{r SOC pch NClass, echo =F}
+numericInput(inputId="SOC.pc.NClass", 
+              label="Number of intervals",
+              value = 10,
+              min=5, 
+              max=50,
+              step = 1)
+```
+:::
+::::
+
+```{r SOC pch subset to declining, echo=F}
+
+SOCneg.fun<-function(Data,Threshold){
+  Data[Data>Threshold]<-NA
+  return(Data)
+}
+
+SOC.pch2<-reactive({
+  if(input$SOC.pc.neg=="Yes"){
+    SOCneg.fun(Data=SOC.pch(),Threshold=input$SOC.Degradation.Threshold)
+  }else{
+    SOC.pch()
+  }
+})
+```
+
+```{r SOC pch make cuts, echo =F}
+SOC.pch.cuts <- reactive({unique(quantile(SOC.pch2()[],probs=seq(0,1,1/input$SOC.pc.NClass),na.rm=T))})
+```
+
+```{r Plot SOC pch raster for extraction mask, echo=F}
+
+renderPlot({
+  if(input$SOC.pc.Classify=="No"){
+      terra::plot(terra::mask(terra::crop(SOC.pch2(),ExtractBy()),ExtractBy()),
+                        type="continuous",
+                        pax=list(cex.axis=input$TextSize),
+                        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                        col=viridis::viridis(length(SOC.pch.cuts()),option=input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                        main="SOC percent change - Trends Earth Data",
+                        cex.main=input$TextSize,
+                        axes = F,
+                        frame.plot= F)
+       }else{
+         terra::plot(terra::mask(terra::crop(SOC.pch2(),ExtractBy()),ExtractBy()),
+                     breaks=SOC.pch.cuts(),
+                     type="interval",
+                      pax=list(cex.axis=input$TextSize),
+                      plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+                     col = viridis::viridis(length(SOC.pch.cuts()),option=input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                     main="SOC percent change - Trends Earth Data",
+                     cex.main=input$TextSize,
+                      axes = F,
+                      frame.plot= F)
+       }
+  if(input$AddAdmin=="Yes"){
+    terra::plot(ExtractBy(),border=input$BorderCol, add=T)
+    }
+  },height=Plot.Height, width=Plot.Width)
+```
+
+###### Map: Admin
+```{r SOC Choose Variable for admin plot, echo=F}
+renderUI({  
+  selectInput(inputId="SOC.pc.admin.var", 
+               label= "Choose variable to plot", 
+               choices = colnames(SOC.pch.Tab())[-1], 
+               selected = "soc_pch.neg.area",
+               multiple = F)
+})
+```
+
+
+```{r Plot SOC ADmin Map, echo=F}
+AddField2<-function(Admin,SOC.Tab,Field){
+ 
+  Admin$SOC.Field<-as.numeric(unlist(SOC.Tab[,..Field]))
+
+  return(Admin)
+}
+
+SOCAdminPlot<-reactive({
+  AddField2(Admin=ExtractBy(),
+           SOC.Tab=SOC.pch.Tab(),
+           Field=input$SOC.pc.admin.var)
+  })
+
+renderPlot({
+      terra::plot(SOCAdminPlot(),
+        "SOC.Field",
+        type="continuous",
+        plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
+        main=input$SOC.pc.admin.var,
+        col=viridis::viridis(n=input$Ncolours,option=input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+        border=input$BorderCol,
+        pax=list(cex.axis=input$TextSize),
+        cex.main=input$TextSize,
+        axes = F,
+        frame.plot= F)
+  },height=Plot.Height, width=Plot.Width)
+```
+
+### Challenges Joined {.tabset .tabset-fade .tabset-pills}
+**You will need to first open the results tabs of the previous sections to run the calculations required here**   
+To enable this section please ensure you have opened the following tabs:  
+1) `Climate Hazards x Exposure/Results/Geography/Results`   
+2) `Climate Hazards x Exposure/Results/LPS/Results`    
+3) `GHG Emissions & Soil Degradation/Results/Emissions/Geography (Bars)`   
+4) `GHG Emissions & Soil Degradation/Results/Emissions/Livestock System (Bars)`   
+5) `GHG Emissions & Soil Degradation/Results/SOC in LPS/Geography (Bars)`   
+6) `GHG Emissions & Soil Degradation/Results/SOC in LPS/Livestock System (Bars)`  
+  
+Below choose weightings for the emissions, soil organic carbon and exposure prioritization indicators. Each sub-indicator is multiplied this number, so if there are four sub-exposure indicators and you want exposure to have the same weighting as emissions which has one indicator then the weighting for exposure should be 1/4 and the weighting for emissions 1. Note that we consider declining soil organic carbon (SOC) in livestock production systems (LPS) to be part of the Adaptation prioritization. As such Declining SOC is included in the Adaptation axis of the biscale plot in the Map tab.
+
+```{r Combined - Outcomes By Geography CO2e,echo=F}
+CO2e.DataC<-reactive({
+      CO2BarPlotter(Data=Combined.CO2e.DTab(),
+                  Palette=input$Palette,
+                  Variables=input$CO2.Column,
+                  Bar.Fill=input$Bar.Fill,
+                  Bar.N=9999,
+                  Bar.Width=input$Bar.Width,
+                  Bar.Order=input$Bar.Order,
+                  TextSize=input$TextSize,
+                  Bar.Stack=input$Bar.Stack,
+                  Xlab=Xlab(),
+                  LegPos = input$LegPos,
+                  CoordFlip = "No",
+                  AreaWeight = "No",
+                  FontFace = input$FontFace)$data
+                
+})
+```
+
+```{r Combined - Outcomes By Exposure,echo=F}
+Exposure.DataC<-reactive({
+  GHE_Plotter(Data=ExposureGeoData(),
+                 Fill=input$HE.Fill,
+                 TextSize=input$TextSize,
+                 Palette=input$Palette,
+                 LegPos="bottom",
+                 OrderBy=input$HE.Order,
+                 MaxRows = 9999,
+                 Alpha=input$Alpha,
+                 CoordFlip = "No",
+                 AreaWeight = "No",
+                 FontFace = input$FontFace,
+                LegCols=input$LegCols,
+                PanelSpace = input$PanelSpace)$data
+})
+```
+
+```{r Combined - Outcomes By Geography SOC,echo=F}
+SOC.DataC<-reactive({
+      SOCBarPlotter(Data=SOC.pch.Tab(),
+                  Palette=input$Palette,
+                  Variables= "soc_pch.neg.area",
+                  Bar.Fill=input$Bar.Fill,
+                  Bar.N=9999,
+                  Bar.Width=input$Bar.Width,
+                  Bar.Order=input$SOC.Bar.Order,
+                  TextSize=input$TextSize,
+                  Bar.Stack=input$Bar.Stack,
+                  InvertX=input$SOC.Bar.Invert,
+                  CoordFlip = "No",
+                  FontFace = input$FontFace)$data
+})
+
+```
+
+:::: {style="display: flex;"}
+::: {}
+```{r Combined - weight CO2, echo=F}
+  renderUI({
+    numericInput(inputId="Combined.CO2.Weight",
+             label="Emissions weighting",
+             value=round(CO2e.DataC()[,1/length(unique(variable))],3),
+             min=0,
+             max=10,
+             step=0.1,
+             width="200px"
+             )
+  })
+           
+```
+:::
+:::{}
+```{r Combined - weight SOC, echo=F}
+renderUI({
+  numericInput(inputId="Combined.SOC.Weight",
+             label="SOC weighting",
+             value=round(1/(SOC.DataC()[,length(unique(variable))]+Exposure.DataC()[variable!="HazardArea.km",length(unique(variable))]),3),
+             min=0,
+             max=10,
+             step=0.1,
+             width="200px"
+             )
+})
+           
+```
+:::
+:::{}
+```{r Combined - weight Exposure, echo=F}
+  renderUI({
+    numericInput(inputId="Combined.Exposure.Weight",
+             label="Adaptation weighting",
+             value=round(1/(SOC.DataC()[,length(unique(variable))]+Exposure.DataC()[variable!="HazardArea.km",length(unique(variable))]),3),
+             min=0,
+             max=10,
+             step=0.1,
+             width="200px"
+             )
+  })
+           
+```
+:::
+:::{}
+```{r Combined - area weighted, echo=F}
+  selectInput(inputId="Combined.Indicator.Type", 
+             label= "Indicator type", 
+             choices = c("Total","ByArea","Both"), 
+             selected = "Total",
+             multiple = F,
+             width="200px")
+```
+:::
+:::{}
+```{r Combined - min geography size, echo=F}
+  numericInput(inputId="Combined.Min.Geo.Area",
+             label="Minimum country size (km2)",
+             value=10000,
+             min=0,
+             max=10^7,
+             step=5000,
+             width="200px"
+             )
+```
+:::
+::::
+
+#### Prepare Data{.tabset .tabset-fade .tabset-pills}
+##### Geographies 
+
+Emissions
+```{r - Outcomes By Geography CO2e data.table,echo=F}
+
+  renderDT({
+      datatable(CO2e.DataC(),
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
+  }) 
+```
+Soil Organic Carbon 
+```{r - Outcomes By Geography SOC data.table,echo=F}
+  renderDT({
+      datatable(SOC.DataC(),
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
+  }) 
+```
+Exposure x Hazard x Poverty
+```{r - Outcomes By Geography Exposure data.table,echo=F}
+  renderDT({
+      datatable(Exposure.DataC(),
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
+  }) 
+
+```
+
+```{r Combined - create function to merge data}
+
+CombineData<-function(CO2e,SOC,Exposure,Weightings=list(CO2e=1,SOC=1,Exposure=1),Transformation){
+  
+  TransFun<-function(X,Transformation){
+    if(Transformation=="Square Root"){
+    X<-X^(1/2)
+  }
+  
+  if(Transformation=="Cube Root"){
+       X<-X^(1/3)
+  }
+  
+  if(Transformation=="Log10"){
+    X<-log10(X)
+  }
+  
+  if(Transformation=="Natural Log"){
+    X<-log(X)
+  }
+    
+    X[is.infinite(X)]<-NA
+    return(X)
+  }
+  
+  Scaler<-function(value,variable,Transformation,weighting){
+    X<-data.table(value=TransFun(value,Transformation=Transformation),variable=variable)
+    
+    X[,Min:=min(value,na.rm=T),by=variable
+      ][,value:=value-Min
+        ][,Max:=max(value,na.rm=T),by=variable
+          ][,value:=weighting*((value)/Max)
+            ][is.na(value),value:=0]
+    
+      return(X[,value])
+  }
+  
+    if(!is.null(CO2e)){
+  CO2e[,value.std:= Scaler(value=value,variable=variable,Transformation = Transformation, weighting = Weightings$CO2e)
+       ][,value.std.area:=Scaler(value=value/Area,variable=variable,Transformation = Transformation, weighting = Weightings$CO2e)
+         ][,value.std.both:=(value.std+value.std.area)/2
+             ][,type:="Mitigation"
+              ][,type2:="Mitigation"]
+    }else{
+      CO2e<-NULL
+    }
+  
+  if(!is.null(SOC) & Weightings$SOC!=0){
+      setnames(SOC,"LPS.Area.km2","Area")
+
+  SOC[,value.std:=Scaler(value=value,variable=variable,Transformation = Transformation, weighting = Weightings$SOC)
+       ][,value.std.area:=Scaler(value=value/Area,variable=variable,Transformation = Transformation, weighting = Weightings$SOC)
+         ][,value.std.both:=(value.std+value.std.area)/2
+             ][,type:="Adaptation"
+                ][,type2:="SOC"]
+  }else{
+    SOC<-NULL
+  }
+  
+  if(!is.null(Exposure)){
+
+  Exposure<-Exposure[,list(value=sum(value,na.rm = T)),by=list(variable,ADMIN,Area)]
+    
+  Exposure[,value.std:=Scaler(value=value,variable=variable,Transformation = Transformation, weighting = Weightings$Exposure)
+             ][,value.std.area:=Scaler(value=value/Area,variable=variable,Transformation = Transformation, weighting = Weightings$Exposure)
+               ][,value.std.both:=(value.std+value.std.area)/2
+                   ][,type:="Adaptation"
+                     ][,type2:="Adaptation"]
+  }else{
+    Exposure<-NULL
+  }
+  
+
+  Combined<-rbind(CO2e,SOC,Exposure,use.names=TRUE)
+  
+  Combined[,variable:=gsub(" ($ billion)","",variable)
+           ][,variable:=gsub(" (million ha)","",variable)
+             ][,variable:=gsub(" (million)","",variable)
+               ][,variable:=gsub("Total.CO2e","Livestock Emissions",variable)
+                 ][,variable:=gsub("soc_pch.neg.area","Declining SOC in LPS",variable)
+                   ][,Area:=round(Area,0)]
+  
+  return(Combined)
+}
+
+Combined.Data<-reactive({
+  CombineData(CO2e=data.table::copy(CO2e.DataC()),
+              SOC=data.table::copy(SOC.DataC()),
+              Exposure=data.table::copy(Exposure.DataC()),
+              Weightings=list(CO2e=input$Combined.CO2.Weight,
+                              SOC=input$Combined.SOC.Weight,
+                              Exposure=input$Combined.Exposure.Weight),
+              Transformation = "none")
+})
+```
+
+```{r Combined - show data, echo=F}
+  renderDT({
+      datatable(Combined.Data(),
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
+  }) 
+```
+Indicator distributions *these are used in Bar Plots (All Geographies)*
+```{r Combined - Show Distributions, echo=F}
+renderPlot({
+  ggplot(Combined.Data(),aes(x=value.std))+
+    geom_histogram()+
+    facet_wrap(vars(variable))
+})
+```
+
+```{r Combined - Create Plotter Function}
+Combined_Plotter<-function(Data,TextSize,Palette,LegPos,MaxRows,Alpha,Variables,CoordFlip,Variable,IndType,MinArea,FontFace){
+
+  Data<-Data[Area>=MinArea]
+  
+  if(IndType=="Total"){
+    Data<-Data[variable %in% Variables,list(value=sum(value.std,na.rm=T)),by=list(ADMIN,variable,type)]
+  }
+  
+  if(IndType=="ByArea"){
+    Data<-Data[variable %in% Variables,list(value=sum(value.std.area,na.rm=T)),by=list(ADMIN,variable,type)]
+  }
+  
+  if(IndType=="Both"){
+    Data<-Data[variable %in% Variables,list(value=sum(value.std.both,na.rm=T)),by=list(ADMIN,variable,type)]
+  }
+  
+   X<-data.table::copy(Data)
+   X[,OrderVar:=Data[,value]][,list(OrderVar,ADMIN)]
+   Keep<-X[,list(Total=sum(OrderVar)),by=ADMIN][order(Total,decreasing = T)][,ADMIN]
+  
+   Data2<-data.table::copy(Data)
+   
+  if(Data[,length(unique(ADMIN))]>MaxRows){
+    Keep<-Keep[1:MaxRows]
+    Data2<-Data2[ADMIN %in% Keep]
+  }
+  
+  Data2[,ADMIN:=factor(ADMIN,levels=Keep)]
+
+g<-ggplot(Data2,aes(x=ADMIN,y=value,fill=variable))
+
+g<-g+geom_bar(stat = "identity")+
+ scale_fill_viridis_d(option=Palette,alpha=Alpha)+
+  theme_bw()+
+  scale_y_continuous(expand=expansion(mult=c(0,0.05)))+
+  theme(axis.title = element_blank(),
+        legend.position = LegPos,
+        panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_blank(),
+        text = element_text(size=TextSize*13,face=FontFace))
+
+
+if(CoordFlip=="Yes"){
+  g<-g+coord_flip()
+}
+
+return(list(plot=g,data=Data))
+}
+```
+
+```{r Combined - create function to prepare data 2,echo=T}
+CombineData2<-function(CO2e,SOC,Exposure){
+  
+     if(!is.null(CO2e)){
+       setnames(CO2e,"variable","fill")
+       
+        CO2e[,fill:=gsub("Bovine.meat","Bovine",fill)
+             ][,fill:=gsub("Bovine.milk","Bovine",fill)
+               ][,fill:=gsub("All.livestock","Livestock",fill)
+                 ][,fill:=gsub("All.livestock.exc..poultry","Livestock (no poultry)",fill)
+                   ][,fill:=gsub("All.livestock.exc..low.density.poultry","Livestock (no LD poultry)",fill)
+                     ][,fill:=gsub("Pig.meat","Pig",fill)
+                       ][,fill:=gsub("Sheep.and.goat.milk","Shoat",fill)
+                         ][,fill:=gsub("Sheep.and.goat.meat","Shoat",fill)
+                           ][,fill:=gsub("LUC.Soy.Pasture","Forest Loss",fill)
+                             ][,fill:=gsub("LUC.Pasture","Forest Loss Pasture",fill)
+                               ][,fill:=gsub("LUC.Soy","Forest Loss Soy",fill)
+                                 ][,fill:=gsub("Total.CO2e","Livestock",fill)
+                                   ][,type:="Mitigation"
+                                     ][,variable:="Emissions"
+                                       ][,variable.code:="E"
+                                         ][,type2:="Mitigation"]
+        
+        CO2e<-CO2e[,list(value=sum(value,na.rm=T)),by=list(ADMIN,Area,fill,variable,variable.code,type,type2)]
+        
+    }else{
+      CO2e<-NULL
+    }
+  
+  if(!is.null(SOC)){
+    setnames(SOC,c("LPS.Area.km2","variable"),c("Area","fill"))
+
+  SOC[,type:="Adaptation"
+        ][,variable.code:="C"
+          ][,fill:=gsub("soc_pch.neg.area","Declining SOC",fill)
+            ][,type2:="SOC"
+              ][,variable:=fill]
+
+  }else{
+    SOC<-NULL
+  }
+  
+  if(!is.null(Exposure)){
+
+    setnames(Exposure,"Hazard_Class","fill")
+    
+      Exposure[variable=="Total value of production ($ B)",variable.code:="V"]
+      Exposure[variable=="Total pasture area (M ha)",variable.code:="P"]
+      Exposure[variable=="Total rural population (M)",variable.code:="R"]
+      Exposure[variable=="Total TLU (M)",variable.code:="L"]
+    
+      Exposure[variable=="Total value of production ($ B)",variable:="Value"]
+      Exposure[variable=="Total pasture area (M ha)",variable:="Pasture"]
+      Exposure[variable=="Total rural population (M)",variable:="Population"]
+      Exposure[variable=="Total TLU (M)",variable:="LUs"]
+      Exposure[,Area:=round(Area,0)
+               ][,type:="Adaptation"
+                 ][,type2:="Adaptation"]
+    
+  }else{
+    Exposure<-NULL
+  }
+  
+
+  Combined<-rbind(CO2e,SOC,Exposure,use.names=TRUE)
+  
+  Combined[,value.prop:=100*value/sum(value,na.rm=T),by=variable]
+  Totals<-Combined[,list(value=sum(value,na.rm=T)),by=variable]
+  
+  return(list(Data=Combined,Totals=Totals))
+}
+
+Combined.Data2<-reactive({
+  CombineData2(CO2e=data.table::copy(CO2e.DataC()),
+              SOC=data.table::copy(SOC.DataC()),
+              Exposure=data.table::copy(Exposure.DataC()))
+})
+
+```
+Indicator distributions *these are used in Bar Plots (Single Geography)*
+```{r Combined - show data 2, echo=F}
+  renderDT({
+      datatable(Combined.Data2()$Data,
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
+  }) 
+
+```
+
+##### Livestock Production Systems
+```{r  Combined LPS - Prepare Data}
+PrepareLPSComboData<-function(CO2e,SOC,Exposure){
+  CO2e<-data.table(CO2e)
+  SOC<-data.table(SOC)
+  Exposure<-data.table(Exposure)
+  
+     if(!is.null(CO2e)){
+       setnames(CO2e,c("ADMIN","variable"),c("LPS","fill"))
+        CO2e[,Area:=NULL]
+        
+        CO2e[,fill:=gsub("Bovine.meat","Bovine",fill)
+             ][,fill:=gsub("Bovine.milk","Bovine",fill)
+               ][,fill:=gsub("All.livestock","Livestock",fill)
+                 ][,fill:=gsub("All.livestock.exc..poultry","Livestock (no poultry)",fill)
+                   ][,fill:=gsub("All.livestock.exc..low.density.poultry","Livestock (no LD poultry)",fill)
+                     ][,fill:=gsub("Pig.meat","Pig",fill)
+                       ][,fill:=gsub("Sheep.and.goat.milk","Shoat",fill)
+                         ][,fill:=gsub("Sheep.and.goat.meat","Shoat",fill)
+                           ][,fill:=gsub("LUC.Soy.Pasture","Forest_Loss",fill)
+                             ][,fill:=gsub("LUC.Pasture","Forest_Loss_Pasture",fill)
+                               ][,fill:=gsub("LUC.Soy","Forest_Loss_Soy",fill)
+                                 ][,fill:=gsub("Total.CO2e","Livestock",fill)
+                                   ][,type:="Mitigation"
+                                     ][,variable:="Emissions"
+                                       ][,variable.code:="E"]
+        
+        CO2e<-CO2e[,list(value=sum(value,na.rm=T)),by=list(LPS,fill,variable,variable.code,type)]
+        
+    }else{
+      CO2e<-NULL
+    }
+  
+  if(!is.null(SOC)){
+    setnames(SOC,"soc_pch.neg.area","value")
+
+  SOC[,type:="Mitigation"
+       ][,variable:="SOC"
+       ][,variable.code:="C"
+         ][,fill:="Declining SOC"]
+
+  }else{
+    SOC<-NULL
+  }
+  
+  if(!is.null(Exposure)){
+
+    setnames(Exposure,"Hazard_Class","fill")
+    
+      Exposure[variable=="Total value of production ($ B)",variable.code:="V"]
+      Exposure[variable=="Total pasture area (M ha)",variable.code:="P"]
+      Exposure[variable=="Total rural population (M)",variable.code:="R"]
+      Exposure[variable=="Total TLU (M)",variable.code:="L"]
+   
+      Exposure[variable=="Total value of production ($ B)",variable:="Value"]
+      Exposure[variable=="Total pasture area (M ha)",variable:="Pasture"]
+      Exposure[variable=="Total rural population (M)",variable:="Population"]
+      Exposure[variable=="Total TLU (M)",variable:="LUs"]
+      
+      Exposure[,type:="Adaptation"]
+      Exposure[,variable.code:="E"]
+    
+  }else{
+    Exposure<-NULL
+  }
+  
+  Combined<-rbind(CO2e,SOC,Exposure,use.names=TRUE)
+  Combined[,value.prop:=100*value/sum(value,na.rm=T),by=variable]
+  
+  #return(list(CO2e,SOC,Exposure))
+
+  return(Combined)
+}
+
+LPSCombineData<-reactive({
+  PrepareLPSComboData(CO2e=BarPlot.LPS()$data,
+                      SOC=SOC.LPS2(),
+                      Exposure=ExposureRLPlot()$data)
+})
+
+```
+
+```{r  Combined LPS - Create Plot Function}
+PlotLPSCombined<-function(Data,TextSize,Palette.CO2e,ColourSOC,Palette.Exp,Alpha,Variables,Hazards,Emissions,LPS.Choice){
+
+Data<-Data[variable %in% Variables & LPS %in% LPS.Choice]
+Data[type=="Adaptation" & !fill %in% Hazards,fill:="Other Hazard"]
+Data[variable=="Emissions" & !fill %in% Emissions,fill:="Other Emission"]
+
+Data<-Data[,list(value.prop=sum(value.prop,na.rm=T)),by=list(type,variable,fill,LPS)]
+  
+if(Palettes[palette==Palette.CO2e,source]=="viridis"){
+  Palette.CO2e<-viridis(Data[variable=="Emissions",length(unique(fill))],alpha=Alpha,option=Palette.CO2e)
+}else{
+  Palette.CO2e<-brewer.pal(Data[variable=="Emissions",length(unique(fill))],Palette.CO2e)
+}
+  names(Palette.CO2e)<-Data[variable=="Emissions",unique(fill)]
+  
+  if(Palettes[palette==Palette.Exp,source]=="viridis"){
+  Palette.Exp<-viridis(Data[type=="Adaptation",length(unique(fill))],alpha=Alpha,option=Palette.Exp)
+}else{
+  Palette.Exp<-brewer.pal(Data[type=="Adaptation",length(unique(fill))],Palette.Exp)
+}
+  names(Palette.Exp)<-Data[type=="Adaptation",unique(fill)]
+  
+  names(ColourSOC)<-"SOC"
+
+Palette<-c(Palette.CO2e,Palette.Exp,ColourSOC)
+  
+
+g<-ggplot(Data,aes(x=variable,y=value.prop,fill=fill))+
+  geom_bar(stat="identity",colour="black",size=0.25)+
+  scale_fill_manual(values=Palette)+
+  scale_y_continuous(expand=c(0,1))+
+  facet_wrap(vars(LPS))+
+  theme_bw()+
+  coord_flip()+
+  labs(y="Percent",x="Prioritization indicator")+
+  theme(  axis.ticks.y=element_blank(),
+          legend.position = "bottom",
+          panel.grid = element_blank(),
+          text = element_text(size=TextSize*13,face="bold"),
+          panel.spacing = unit(0, "lines"),
+          panel.background = element_blank(),
+          panel.border = element_blank(),
+          plot.background = element_blank(),
+          legend.title = element_blank(),
+          strip.background = element_blank()
+          )
+  
+
+return(g)
+
+}
+```
+
+#### Results {.tabset .tabset-fade .tabset-pills}
+
+``` {r Combined - choose subindicators, echo=F}
+  renderUI({
+    checkboxGroupInput(inputId="Combined.Subindicators", 
+             label= "Subindicators to plot", 
+             choices = Combined.Data()[variable!="HazardArea.km",unique(variable)], 
+             selected = Combined.Data()[variable!="HazardArea.km",unique(variable)],
+             inline = T)
+  })
+
+```
+*Do not forget to consider adjusting your weightings if you change the plotted subindicators*
+
+```{r Combined - Create Plot,echo=F}
+CombinedPlot<-reactive({
+  Combined_Plotter(Data=data.table::copy(Combined.Data()),
+                 TextSize=input$TextSize,
+                 Palette=input$Palette,
+                 LegPos="bottom",
+                 MaxRows = input$Max.Bars,
+                 Alpha=input$Alpha,
+                 Variables=input$Combined.Subindicators,
+                 CoordFlip=input$CoordFlip,
+                 IndType=input$Combined.Indicator.Type,
+                 MinArea=input$Combined.Min.Geo.Area,
+                 FontFace = input$FontFace)
+})
+
+```
+
+##### Map
+*Note that we consider declining soil organic carbon (SOC) in livestock production systems (LPS) to be part of the Adaptation prioritization. As such Declining SOC is included in the Adaptation axis of the biscale plot.*
+
+:::: {style="display: flex;"}
+::: {}
+```{r Combined - Map Legend Size, echo=F}
+  numericInput(inputId="Combined.LegSize",
+             label="Legend Size",
+             value=0.25,
+             min=0,
+             max=1,
+             step=0.1,
+             width="200px"
+             )
+           
+```
+:::
+:::{}
+```{r Combined - Legend X Position, echo=F}
+  numericInput(inputId="Combined.LegXPos",
+             label="Legend x position",
+             value=0.7,
+             min=0,
+             max=1,
+             step=0.05,
+             width="200px"
+             )
+           
+```
+:::
+:::{}
+```{r Combined - Legend Y Position, echo=F}
+  numericInput(inputId="Combined.LegYPos",
+             label="Legend y position",
+             value=0.1,
+             min=0,
+             max=1,
+             step=0.05,
+             width="200px"
+             )
+           
+```
+:::
+:::{}
+```{r Combined - Plot Palette, echo=F}
+  selectInput(inputId="Combined.Palette", 
+               label= "Plot palette", 
+               choices = c("Brown2", "DkBlue2", "DkCyan2", "DkViolet2", "GrPink2"),
+               selected = "Brown2",
+               multiple = F,
+               width="200px")
+
+```
+:::
+:::{}
+```{r Combined - Plot Break Type, echo=F}
+  selectInput(inputId="Combined.Style", 
+               label= "Break style", 
+               choices = c("equal", "fisher", "jenks"),
+               selected = "fisher",
+               multiple = F,
+               width="200px")
+
+```
+:::
+::: {}
+```{r Combined - Map Save Plot, echo=F}
+  selectInput(inputId="Combined.Map.Save.Plot", 
+              label="Save plot?",
+              choices = c("Yes","No"),
+              selected="No", 
+              multiple = F)
+```
+:::
+:::{}
+```{r Combined - Map Plot Filename, echo=F}
+    textInput(inputId="Combined.Map.Filename",
+              label="Enter file name", 
+              value="Enter text")
+            
+```
+:::
+::::
+
+```{r Combined - Create Map, echo=F}
+
+CombinedMapFun<-function(ExtractBy,Data,Dim,TextSize,Xlab,Ylab,LegendSize,LegXPos,LegYPos,Palette,Colour,BreakType,LegCols){
+ 
+  Data<-dcast(Data,ADMIN~type,value.var="value",fun.aggregate=sum)
+  N<-match(ExtractBy$ADMIN,Data[,ADMIN])
+           
+  ExtractBy$Mitigation<-Data[N,Mitigation]
+  ExtractBy$Adaptation<-Data[N,Adaptation]
+  
+  st_crs(ExtractBy)<-NA
+  
+  # create classes
+  data <- biscale::bi_class(ExtractBy, x = Mitigation, y = Adaptation, style = BreakType, dim = Dim)
+  
+  map <- ggplot() +
+    geom_sf(data , mapping=aes(fill=bi_class), colour=Colour, show.legend=F) +
+    biscale::bi_scale_fill(pal=Palette, dim=Dim) +
+    biscale::bi_theme()+
+    guides(fill = guide_legend(ncol=LegCols))
+  
+  legend <- biscale::bi_legend(pal = Palette,
+                      dim = Dim,
+                      xlab = Xlab,
+                      ylab = Ylab,
+                      size = 13*TextSize)
+  
+  allplot <- cowplot::ggdraw() +
+  cowplot::draw_plot(map, 0, 0, 1, 1) +
+  cowplot::draw_plot(legend, x=LegXPos, y=LegYPos, width=LegendSize, height=LegendSize)
+
+  return(list(plot=allplot,data=Data,data2=data))
+  
+}
+
+CombinedMap<-reactive({CombinedMapFun(ExtractBy=ExtractBySf(),
+                                      Data=data.table::copy(CombinedPlot()$data),
+                                      Dim = 4,
+                                      TextSize = input$TextSize,
+                                      Xlab = "Mitigation ",
+                                      Ylab = "Adaptation ",
+                                      LegendSize = input$Combined.LegSize,
+                                      LegXPos = input$Combined.LegXPos ,
+                                      LegYPos = input$Combined.LegYPos,
+                                      Palette = input$Combined.Palette,
+                                      Colour = input$BorderCol,
+                                      BreakType=input$Combined.Style,
+                                      LegCols=input$LegCols)})
+```
+
+```{r Combined - Render biscale map,echo=F}
+renderPlot({
+  plot(CombinedMap()$plot)
+},height=Plot.Height, width=Plot.Width)
+
+```
+
+```{r Combined - Biscale Data,echo=F}
+  renderDT({
+      datatable(CombinedMap()$data2,
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
+  }) 
+```
+
+```{r Combined - Save Map,echo = F}
+
+reactive({
+  if(input$Combined.Map.Save.Plot=="Yes"){
+   if(input$Combined.Map.Filename != "Enter text here"){
+    if(input$SavePlot.Format=="pdf"){
+    ggsave(filename = paste0(input$Combined.Map.Filename,".",input$SavePlot.Format),
+           plot = CombinedMap()$plot,
+           path = input$SavePlot.Dir,
+           width= input$SavePlot.Width,
+           height = input$SavePlot.Height,
+           units = "mm",
+           scale = input$SavePlot.Scale,
+           dpi = input$SavePlot.Resolution,
+           device = cairo_pdf)
+    }else{
+          ggsave(filename = paste0(input$Combined.Map.Filename,".",input$SavePlot.Format),
+           plot = CombinedMap()$plot,
+           path =  input$SavePlot.Dir,
+           width= input$SavePlot.Width,
+           height = input$SavePlot.Height,
+           units = "mm",
+           scale = input$SavePlot.Scale,
+           dpi = input$SavePlot.Resolution,
+           type = "cairo")
+    }}}})
+
+```
+
+##### Bars (All Geographies)
+
+```{r Combined - Plot, echo = F}
+renderPlot({CombinedPlot()$plot},height=Plot.Height, width=Plot.Width)
+```
+
+```{r Combined - Data table, echo = F}
+  renderDT({
+      datatable(CombinedPlot()$data,
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
+  }) 
+```
+
+**Dot Plot**
+
+:::: {style="display: flex;"}
+::: {}
+```{r Plot point Mitigation colour picker, echo =F}
+  colourInput(inputId="Col1",
+              label="Mitigation colour",
+              value="#9DBEBB")
+```
+:::
+:::{}
+```{r Plot point Adaptation colour picker 2, echo =F}
+  colourInput(inputId="Col2",
+              label="Adaptation colour",
+              value="#468189")
+```
+:::
+:::{}
+```{r Text point Mitigation colour picker, echo =F}
+  colourInput(inputId="TextCol1",
+              label="Mitigation text colour",
+              value="black")
+```
+:::
+:::{}
+```{r Text point Adaptation colour picker 2, echo =F}
+  colourInput(inputId="TextCol2",
+              label="Adaptation text colour",
+              value="white")
+```
+:::
+:::{}
+```{r Point lab size, echo =F}
+  numericInput(inputId="PointSize",
+             label="Point size",
+             value=10,
+             min=0,
+             max=20,
+             step=1,
+             width="100px"
+             )
+```
+:::
+::::
+
+```{r Combined - Slope Plot, echo=T}
+
+DotFun<-function(Data,n,Col1,Col2,TextCol1,TextCol2,TextSize,PointSize,TextBase){
+  
+  Data<-Data[,total:=sum(value,na.rm=T),by=variable
+             ][,Perc:=100*value/total
+               ][,Nvars:=length(unique(variable)),by=type
+                 ][,Perc_w:=Perc/Nvars]
+  
+  Data<-Data[,list(value=sum(Perc_w)),by=c("ADMIN","type")]
+  Data<-dcast(Data,formula=ADMIN~type)
+  Data[,Mitigation_Gtr:="False"][Mitigation>Adaptation,Mitigation_Gtr:="True"]
+  Data<-Data[,Total:=Mitigation+Adaptation][order(Total,decreasing=T)][,ADMIN:=factor(ADMIN,levels=rev(ADMIN))]
+ 
+  n<-20
+  gg_dot<-ggplot(Data[1:n]) +
+    # remove axes and superfluous grids
+    theme_classic() +
+    theme(axis.title = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.line = element_blank(),
+          axis.text=element_text(size=9*TextSize)) +
+    
+    # add a dummy point for scaling purposes
+    geom_point(aes(x = 12, y = ADMIN), 
+               size = 0, col = "white") + 
+    
+    # add the horizontal ADMIN lines
+    geom_hline(yintercept = 1:n, col = "grey80") +
+    
+    # add a point for Mitigation
+    geom_point(aes(x = Mitigation, y = ADMIN), 
+               size = PointSize, col = Col1) +
+    # add a point for each Adaptation
+    geom_point(aes(x = Adaptation, y = ADMIN),
+               size = PointSize, col = Col2) +
+
+    # add the text (%) for Mitigation
+    geom_text(aes(x = Mitigation, y = ADMIN, 
+                  label = paste0(round(Mitigation, 1))),
+              col = TextCol1,size=TextBase*TextSize) +
+    # add the text (%) for Adaptation
+    geom_text(aes(x = Adaptation, y = ADMIN, 
+                  label = paste0(round(Adaptation, 1))),
+              col = TextCol2,size=TextBase*TextSize) +
+    # add a label above the first two points
+    geom_text(aes(x = x, y = y, label = label, col = label),
+              data.frame(x = c(Data[1,Mitigation], Data[1,Adaptation]), y = n+1.2, 
+                         label = c("Mitigation", "Adaptation")), size = TextBase*1.2,fontface="bold") +
+    scale_color_manual(values = c(Col2, Col1), guide = "none") +
+    
+    # manually specify the x-axis
+    scale_x_continuous(breaks = c(0, 10, 20), 
+                       labels = c("0%", "10%", "20%")) +
+    # manually set the spacing above and below the plot
+    scale_y_discrete(expand = c(0.07,0)) 
+  
+  
+  return(gg_dot)
+}
+
+```
+
+```{r Combined - Dot Plot, echo=T}
+PointData<-reactive({Combined.Data2()[!variable %in% input$Combined.Subindicators]})
+
+#renderPrint({PointData()})
+
+DotPlot<-reactive({
+  DotFun(Data=PointData(),
+           n=input$Max.Bars,
+           Col1=input$Col1,
+           Col2=input$Col2,
+           TextCol1=input$TextCol1,
+           TextCol2=input$TextCol2,
+           TextSize=input$TextSize,
+           PointSize=input$PointSize,
+           TextBase=input$TextBase)
+})
+
+  renderPlot({DotPlot()},height=Plot.Height, width=Plot.Width)
+
+
+
+```
+
+```{r Combined - Dot Plot Data, echo = F}
+  renderDT({
+      datatable(DotPlot()$data,
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
+  }) 
+```
+
+##### Bars (Single Geography)
+:::: {style="display: flex;"}
+
+:::{}
+```{r Combined - limit area, echo=F}
+  numericInput(inputId="Combined.MinArea",
+             label="Min area for geog (km2)",
+             value=1000,
+             min=0,
+             max=10^7,
+             step=1000,
+             width="200px"
+             )
+           
+```
+:::
+
+:::{}
+```{r Combined - single geo choose geography, echo=F}
+
+Combined.Bar2.Geog.Labs<-reactive({
+  sort(Combined.Data2()$Data[Area>input$Combined.Min.Geo.Area,unique(ADMIN)])
+})
+
+  renderUI({
+  selectInput(inputId="Combined.Bar2.Geog", 
+             label= "Geography", 
+             choices = Combined.Bar2.Geog.Labs(), 
+             selected = if("India" %in% Combined.Bar2.Geog.Labs()){"India"}else{Combined.Bar2.Geog.Labs()[1]},
+             multiple = F,
+             width="150px")
+  })
+```
+:::
+
+:::{}
+``` {r Combined - single geo choose variables, echo=F}
+  renderUI({
+    checkboxGroupInput(inputId="Combined.Bar2.Ind", 
+             label= "Priorization Indicators", 
+             choices = Combined.Data2()$Data[,unique(variable)], 
+             selected = Combined.Data2()$Data[,unique(variable)],
+             inline = T)
+  })
+
+```
+:::
+::::
+
+
+
+
+:::: {style="display: flex;"}
+:::{}
+``` {r Combined - single geo choose fills hazards, echo=F}
+  renderUI({
+    checkboxGroupInput(inputId="Combined.Bar2.Fills.H", 
+             label= "Fill variables - Hazards/SOC", 
+             choices = c(HazardAreas()[,Complete],Combined.Data2()$Data[type2=="SOC",unique(fill)]), 
+             selected = c(HazardAreas()[1:6,Complete],Combined.Data2()$Data[type2=="SOC",unique(fill)]),
+             inline = T)
+  })
+
+```
+:::
+
+:::
+:::{}
+
+:::{}
+``` {r Combined - single geo choose fills others, echo=F}
+  renderUI({
+    checkboxGroupInput(inputId="Combined.Bar2.Fills.O", 
+             label= "Fill variables - Emissions", 
+             choices =  Combined.Data2()$Data[type2=="Mitigation",unique(fill)],
+             selected =  Combined.Data2()$Data[type2=="Mitigation",unique(fill)],
+             inline = T)
+  })
+
+```
+:::
+::::
+
+:::: {style="display: flex;"}
+::: {}
+```{r Combined - single geo text wrapping, echo=F}
+  numericInput(inputId="Combined.TextWrap",
+             label="Text wrapping",
+             value=10,
+             min=0,
+             max=30,
+             step=1,
+             width="150px"
+             )
+           
+```
+:::
+:::{}
+```{r Combined - single geo remove x-axis,echo=F}
+  selectInput(inputId="Combined.Bar2.RemoveX", 
+             label= "Remove X-axis?", 
+             choices = c("Yes","No"), 
+             selected = "No",
+             multiple = F,
+             width="150px")
+```
+:::
+:::{}
+```{r Combined - single geo remove y-axis,echo=F}
+  selectInput(inputId="Combined.Bar2.RemoveY", 
+             label= "Remove Y-axis?", 
+             choices = c("Yes","No"), 
+             selected = "No",
+             multiple = F,
+             width="150px")
+```
+:::
+:::{}
+```{r Combined - single geo show legend,echo=F}
+  selectInput(inputId="Combined.Bar2.Legend", 
+             label= "Show legend?", 
+             choices = c("Yes","No"), 
+             selected = "Yes",
+             multiple = F,
+             width="150px")
+```
+:::
+:::{}
+```{r Combined - single geo show title,echo=F}
+  selectInput(inputId="Combined.Bar2.Title", 
+             label= "Show title?", 
+             choices = c("Yes","No"), 
+             selected = "Yes",
+             multiple = F,
+             width="150px")
+```
+:::
+:::{}
+```{r Combined - single geo y lim, echo=F}
+renderUI({
+  numericInput(inputId="Combined.Bar2.Ylim",
+             label="Set max value in plot",
+             value=42,
+             min=0,
+             max=100,
+             step=1,
+             width="150px"
+             )
+})
+           
+```
+:::
+:::{}
+```{r Combined - single geo use coded x labs, echo=F}
+  selectInput(inputId="Combined.Bar2.UseXCodes", 
+              label="Code x-axis labels?",
+              choices = c("Yes","No"),
+              selected="Yes", 
+              multiple = F,
+             width="150px")
+```
+:::
+::::
+
+:::: {style="display: flex;"}
+::: {}
+```{r Combined - single geo legend rows, echo=F}
+  numericInput(inputId="Combined.LegRows",
+             label="Legend rows",
+             value=2,
+             min=1,
+             max=10,
+             step=1,
+             width="150px"
+             )
+           
+```
+:::
+:::{}
+```{r Combined - single geo rotate labs, echo=F}
+  selectInput(inputId="Combined.Bar2.RotateX", 
+              label="Rotate axis labels?",
+              choices = c("Yes","No"),
+              selected="No", 
+              multiple = F,
+             width="150px")
+```
+:::
+:::{}
+```{r Combined - single geo y line, echo=F}
+  selectInput(inputId="Combined.Bar2.YLine", 
+              label="Add axis lines?",
+              choices = c("Yes","No"),
+              selected="No", 
+              multiple = F,
+             width="150px")
+```
+:::
+:::{}
+```{r create palettes, echo=F}
+Palettes<-rbind(
+  data.table(palette=c("magma","inferno","plasma","viridis","cividis","rocket","mako","turbo"),source="viridis"),
+  data.table(palette=data.table(RColorBrewer::brewer.pal.info,keep.rownames = T)[category %in% c("div","qual"),rn],source="rcolorbrewer")
+)
+```
+
+```{r Combined - Bar2 - Plot Palette 1,echo=F}
+  selectInput(inputId="Combined.Palette1", 
+              label="Fill palette mitigation",
+              choices = Palettes[,palette],
+              selected="turbo", 
+              multiple = F,
+              width="150px")
+```
+:::
+:::{}
+```{r Combined - Bar2 - Plot Palette 2,echo=F}
+  selectInput(inputId="Combined.Palette2", 
+              label="Fill palette adaptation",
+              choices = Palettes[,palette],
+              selected="magma", 
+              multiple = F,
+              width="150px")
+```
+:::
+:::{}
+```{r Combined - SOC colour picker, echo =F}
+  colourInput(inputId="Combined.SOCCol",
+              label="SOC fill colour",
+              value="grey60")
+```
+:::
+::::
+
+:::: {style="display: flex;"}
+::: {}
+```{r Combined - Bar2 Save Plot Option,echo=F}
+  selectInput(inputId="Combined.Bar2.Save.Plot", 
+              label="Save plot?",
+              choices = c("Yes","No"),
+              selected="No", 
+              multiple = F,
+             width="200px")
+```
+:::
+:::{}
+```{r Combined - Bar2 Plot Filename, echo=F}
+    textInput(inputId="Combined.Bar2.Filename",
+              label="Enter file name", 
+              value="Enter text")
+            
+```
+:::
+::::
+
+```{r Combined - Create single geo plot Function,echo=F}
+Combined_Plotter2<-function(Data,TextSize,Palette1,Palette2,SOCCol,LegPos,MaxRows,Alpha,FillVars,Indicators,CoordFlip,Geography,TextWrap,RemoveX,RemoveY,MaxY,Legend,Title,LegRows,RotateX,YLine,UseXCodes,FontFace){
+  
+Palettes<-rbind(
+data.table(palette=c("magma","inferno","plasma","viridis","cividis","rocket","mako","turbo"),source="viridis"),
+data.table(palette=data.table(RColorBrewer::brewer.pal.info,keep.rownames = T)[category %in% c("div","qual"),rn],source="rcolorbrewer")
+)
+
+Data[!fill %in% FillVars,fill:="Other"]
+
+Data<-Data[variable %in% Indicators & ADMIN %in% Geography]
+Data[,type:=type2]
+
+Data<-Data[,list(value.prop=sum(value.prop,na.rm=T),value=sum(value,na.rm=T)),by=list(ADMIN,type,fill,variable,variable.code)]
+
+Data[type=="Adaptation",fill:=paste0("Haz: ",fill)]
+
+Data[type=="Mitigation",fill:=paste0("CO2: ",fill)]
+
+# Set palette colours for Adaptation
+ if(Palettes[palette == Palette2,source]=="viridis"){
+      Adapt.Cols<-viridis(Data[type=="Adaptation",length(unique(fill))],option=Palette2)
+      }
+    
+  if(Palettes[palette == Palette2,source]!="viridis"){
+        Adapt.Cols<-brewer.pal(Data[type=="Adaptation",length(unique(fill))],Palette2)
+    }
+
+
+if("Other Hazards" %in% Data[,unique(fill)]){
+  names(Adapt.Cols)<-c(Data[type=="Adaptation" & !fill=="Other Hazards",sort(as.character(unique(fill)))],"Other Hazards")
+}else{
+  names(Adapt.Cols)<-Data[type=="Adaptation",sort(as.character(unique(fill)))]
+}
+
+
+# Set palette colours for Mitigation
+ if(Palettes[palette == Palette1,source]=="viridis"){
+     Miti.Cols<-viridis(Data[type=="Mitigation",length(unique(fill))]+1,option=Palette1)[-1]
+      }
+    
+  if(Palettes[palette == Palette1,source]!="viridis"){
+    Miti.Cols<-brewer.pal(Data[type=="Mitigation",length(unique(fill))+1],Palette1)[-1]
+    }
+   
+if("Other Emissions" %in% Data[,unique(fill)]){
+  names(Miti.Cols)<-c(Data[type=="Mitigation" & !fill=="Other Emissions",sort(as.character(unique(fill)))],"Other Emissions")
+}else{
+    names(Miti.Cols)<-Data[type=="Mitigation",sort(as.character(unique(fill)))]
+
+}
+
+
+# Join palettes
+names(SOCCol)<-Data[type=="SOC",unique(fill)]
+
+FillValues<-c(Adapt.Cols,Miti.Cols,SOCCol)
+
+Data[,fill:=factor(fill,levels=names(FillValues))]
+
+if(UseXCodes=="No"){
+    g<-ggplot(Data,aes(x=variable,y=value.prop,fill=fill))
+  }else{
+    g<-ggplot(Data,aes(x=variable.code,y=value.prop,fill=fill))
+  }
+
+ g<-g+geom_bar(stat = "identity",width=1,col="black",size=0.25)+
+    theme_bw()+
+    theme(axis.title = element_blank(),
+          axis.ticks.x=element_blank(),
+          legend.position = LegPos,
+          panel.grid = element_blank(),
+          text = element_text(size=TextSize*13,face=FontFace),
+          panel.spacing = unit(0.25, "lines"),
+          panel.background = element_blank(),
+          panel.border = element_blank(),
+          plot.background = element_blank(),
+          legend.title = element_blank(),
+          strip.background = element_blank()
+          )+
+    coord_cartesian(ylim=c(0,MaxY),expand = FALSE)+
+    guides(fill=guide_legend(nrow=LegRows,byrow=FALSE))+
+    scale_fill_manual(values=FillValues)+
+    facet_grid(.~type,space="free_x",scales="free_x")+
+    labs(fill="Fill variable")
+
+  if(Title=="No"){
+    g<-g+theme(strip.text = element_blank())
+  }
+
+  if(Legend=="No"){
+    g<-g+theme(legend.position = "none")
+  }
+  
+  if(RotateX=="Yes"){
+    g<-g+theme(axis.text.x=element_text(angle = 90,hjust=1))
+  }
+ 
+  if(YLine=="Yes"){
+    g<-g+theme(axis.line=element_line(colour="black",size=0.25))
+  }
+ 
+   if(RemoveX=="Yes"){
+    g<-g+theme(axis.text.x=element_blank(),
+               axis.ticks.x=element_blank())
+  }
+  
+  if(RemoveY=="Yes"){
+    g<-g+theme(axis.text.y=element_blank(),
+               axis.ticks.y=element_blank())
+  }
+  
+  if(CoordFlip=="No"){
+    g<-g+coord_flip()
+  }
+
+return(list(plot=g,data=Data))
+}
+
+Combined_SGeo<-reactive({
+    Combined_Plotter2(Data=data.table::copy(Combined.Data2()$Data),
+                 TextSize=input$TextSize,
+                 Palette1=input$Combined.Palette1,
+                 Palette2=input$Combined.Palette2,
+                 SOCCol=input$Combined.SOCCol,
+                 LegPos="bottom",
+                 MaxRows = input$Max.Bars,
+                 Alpha=input$Alpha,
+                 Indicators=input$Combined.Bar2.Ind,
+                 CoordFlip=input$CoordFlip,
+                 Geography=input$Combined.Bar2.Geog,
+                 FillVars=c(input$Combined.Bar2.Fills.H,input$Combined.Bar2.Fills.O),
+                 TextWrap=input$Combined.TextWrap,
+                 RemoveX = input$Combined.Bar2.RemoveX,
+                 RemoveY = input$Combined.Bar2.RemoveY,
+                 MaxY=input$Combined.Bar2.Ylim,
+                 Legend=input$Combined.Bar2.Legend,
+                 Title=input$Combined.Bar2.Title,
+                 LegRows=input$Combined.LegRows,
+                 RotateX=input$Combined.Bar2.RotateX,
+                 YLine=input$Combined.Bar2.YLine,
+                 UseXCodes=input$Combined.Bar2.UseXCodes,
+                 FontFace=input$FontFace)
+})
+
+```
+
+The y-axis is the % of the global total for a prioritization indicator (the global total being the spatial scope of analysis set).
+```{r Combined - single geo Plot, echo = F}
+renderPlot({Combined_SGeo()$plot},height=Plot.Height, width=Plot.Width)
+```
+
+```{r Combined - single geo plot Data table, echo = F}
+  renderDT({
+      datatable(Combined_SGeo()$data,
+                caption="",
+                colnames = c("Geography","Indicator Type","Indicator (Bar) Fill","Indicator","Indicator Code","Percent of Study Area Total","Sum of Indicator"),
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))  %>% formatRound(columns = 6:7,c(0,3))
+  }) 
+```
+
+```{r Combined - Save Bar2,echo = F}
+reactive({
+  if(input$Combined.Bar2.Save.Plot=="Yes"){
+   if(input$Combined.Bar2.Filename != "Enter text here"){
+    if(input$SavePlot.Format=="pdf"){
+    ggsave(filename = paste0(input$Combined.Bar2.Filename,".",input$SavePlot.Format),
+           plot = Combined_SGeo()$plot,
+           path = input$SavePlot.Dir,
+           width= input$SavePlot.Width,
+           height = input$SavePlot.Height,
+           units = "mm",
+           scale = input$SavePlot.Scale,
+           dpi = input$SavePlot.Resolution,
+           device = cairo_pdf)
+    }else{
+          ggsave(filename = paste0(input$Combined.Bar2.Filename,".",input$SavePlot.Format),
+           plot = Combined_SGeo()$plot,
+           path =  input$SavePlot.Dir,
+           width= input$SavePlot.Width,
+           height = input$SavePlot.Height,
+           units = "mm",
+           scale = input$SavePlot.Scale,
+           dpi = input$SavePlot.Resolution,
+           type = "cairo")
+    }}}})
+
+```
+
+##### Bars (Livestock Production Systems)
+
+``` {r Combined LPS - single geo choose variables, echo=F}
+  renderUI({
+    checkboxGroupInput(inputId="Combined.LPS.Bar2.Ind", 
+             label= "Priorization indicators", 
+             choices = LPSCombineData()[,unique(variable)], 
+             selected = LPSCombineData()[,unique(variable)],
+             inline = T)
+  })
+
+```
+
+``` {r Combined LPS - single geo choose fills hazards, echo=F}
+  renderUI({
+    checkboxGroupInput(inputId="Combined.LPS.Bar2.Fills.H", 
+             label= "Fill variables - Hazards", 
+             choices = HazardAreas()[,Complete], 
+             selected = HazardAreas()[1:6,Complete],
+             inline = T)
+  })
+
+```
+
+``` {r Combined LPS - single geo choose LPS, echo=F}
+  renderUI({
+    checkboxGroupInput(inputId="Combined.LPS.Bar2.LPS", 
+             label= "Facets - LPS", 
+             choices = LPSCombineData()[,unique(LPS)], 
+             selected = LPSCombineData()[,unique(LPS)],
+             inline = T)
+  })
+
+```
+
+``` {r Combined LPS - single geo choose fills others, echo=F}
+  renderUI({
+    checkboxGroupInput(inputId="Combined.LPS.Bar2.Fills.O", 
+             label= "Fill variables - Emissions", 
+             choices = LPSCombineData()[variable=="Emissions",unique(fill)], 
+             selected = LPSCombineData()[variable=="Emissions",unique(fill)],
+             inline = T)
+  })
+
+```
+
+:::: {style="display: flex;"}
+::: {}
+```{r Combined LPS - Bar2 - Plot Palette 1,echo=F}
+  selectInput(inputId="Combined.LPS.Palette1", 
+              label="Emissions palette",
+              choices = Palettes[,palette],
+              selected="turbo", 
+              multiple = F,
+              width="200px")
+```
+:::
+:::{}
+```{r Combined LPS - Plot Palette 2,echo=F}
+  selectInput(inputId="Combined.LPS.Palette2", 
+              label="Hazards palette",
+              choices = Palettes[,palette],
+              selected="magma", 
+              multiple = F,
+              width="200px")
+```
+:::
+::: {}
+```{r Combined LPS - SOC colour picker, echo =F}
+  colourInput(inputId="Combined.LPS.SOCCol",
+              label="SOC fill colour",
+              value="grey60")
+```
+:::
+::::
+
+```{r Combined LPS - Create Plot,echo=F}
+LPSCombinedPlot<-reactive({
+  PlotLPSCombined(Data=LPSCombineData(),
+                  TextSize=input$TextSize,
+                  Palette.CO2e=input$Combined.LPS.Palette1,
+                  ColourSOC=input$Combined.LPS.SOCCol,
+                  Palette.Exp=input$Combined.LPS.Palette2,
+                  Alpha=input$Alpha,
+                  Variables=input$Combined.LPS.Bar2.Ind,
+                  Hazards=input$Combined.LPS.Bar2.Fills.H,
+                  Emissions=input$Combined.LPS.Bar2.Fills.O,
+                  LPS.Choice = input$Combined.LPS.Bar2.LPS)
+})
+```
+
+The x-axis is the % of the global total for a prioritization indicator (the global total being the spatial scope of analysis set).
+```{r Combined LPS - Render Plot,echo=F}
+renderPlot({LPSCombinedPlot()},height=Plot.Height, width=Plot.Width)
+
+```
+
+```{r Combined LPS - Render DT, echo=F}
+  renderDT({
+    datatable(LPSCombineData(),
+                caption="",
+                extensions = 'Buttons',
+                filter = "top",
+                options = list(dom = 'Blfrtip',
+                               buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+                               lengthMenu = list(c(10,25,50,-1),c(10,25,50,"All"))))
+  })
+```
+
+### SessionInfo
+```{r Session Info}
+sessionInfo()
+```
