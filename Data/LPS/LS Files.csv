@@ -1,0 +1,11 @@
+﻿Choice,Meth,N2O
+Bovine meat,bvmeatmeth_00.tif,bvmeatn2oe_00.tif
+Bovine milk,bvmilkmeth_00.tif,bvmilkn2oe_00.tif
+All livestock exc. low density poultry,hipometh_00.tif,hipon2oe_00.tif
+All livestock,lsmeth_00.tif,lsn2oe_00.tif
+All livestock exc. poultry,nopometh_00.tif,nopon2oe_00.tif
+Pig meat,pimeatmeth_00.tif,pimeatn2oe_00.tif
+Poultry,pometh_00.tif,pon2oe_00.tif
+Ruminants,rummeth_00.tif,rumn2oe_00.tif
+Sheep and goat milk,sgmilkmeth_00.tif,sgmilkn2oe_00.tif
+Sheep and goat meat ,sgmeatmeth_00.tif,sgmeatn2oe_00.tif
