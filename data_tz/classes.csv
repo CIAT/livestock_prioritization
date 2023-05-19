@@ -1,0 +1,33 @@
+index_name,version,lower_lim,upper_lim,class,description
+NDD,mvp,-Inf,15,1,No significant stress
+NDD,mvp,15,20,2,Moderate
+NDD,mvp,20,25,3,Severe
+NDD,mvp,25,Inf,4,Extreme
+NDWS,mvp,-Inf,15,1,No significant stress
+NDWS,mvp,15,20,2,Moderate
+NDWS,mvp,20,25,3,Severe
+NDWS,mvp,25,Inf,4,Extreme
+NTx40,mvp,-Inf,1,1,No significant stress
+NTx40,mvp,1,5,2,Moderate
+NTx40,mvp,5,10,3,Severe
+NTx40,mvp,10,Inf,4,Extreme
+NDWL0,mvp,-Inf,2,1,No significant stress
+NDWL0,mvp,2,5,2,Moderate
+NDWL0,mvp,5,8,3,Severe
+NDWL0,mvp,8,Inf,4,Extreme
+TAI,mvp,-Inf,40,1,No significant stress
+TAI,mvp,40,60,2,Moderate
+TAI,mvp,60,80,3,Severe
+TAI,mvp,80,Inf,4,Extreme
+HSH,mvp,-Inf,27,1,No significant stress
+HSH,mvp,27,32,2,Moderate
+HSH,mvp,32,41,3,Severe
+HSH,mvp,41,Inf,4,Extreme
+THI,mvp,-Inf,72,1,No significant stress
+THI,mvp,72,78,2,Moderate
+THI,mvp,78,89,3,Severe
+THI,mvp,89,Inf,4,Extreme
+HSM_NTx35,mvp,-Inf,7,1,No significant stress
+HSM_NTx35,mvp,7,14,2,Moderate
+HSM_NTx35,mvp,14,21,3,Severe
+HSM_NTx35,mvp,21,Inf,4,Extreme
