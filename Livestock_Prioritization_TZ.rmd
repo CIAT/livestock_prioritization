@@ -1007,9 +1007,9 @@ ClassSimple<-function(Data,Threshold,Direction){
   }
 }
 
-class_hazards_fun<-function(classes,haz_names,folder,haz_class,BaseRaster,scenario,time_period){
-    names(classes)<-haz_names
-    data<-lapply(haz_names,FUN=function(hazard){
+class_hazards_fun<-function(classes,folder,haz_class,BaseRaster,scenario,time_period){
+
+    data<-lapply(names(classes),FUN=function(hazard){
             hclass<-classes[[hazard]]
             hclass<-haz_class[description==hclass,unique(class)]
             haz_rast<-terra::rast(list.files(folder,hazard,full.names = T))
@@ -1021,25 +1021,24 @@ class_hazards_fun<-function(classes,haz_names,folder,haz_class,BaseRaster,scenar
             haz_rast
           })
     data<-terra::rast(data)
-    names(data)<-hazards
+
     return(data)
 }
 
 classes<-reactive({
-  c(input$Hazards.NDD,
-    input$Hazards.NTx40,
-    input$Hazards.HSM_NTx35,
-    input$Hazards.HSH_max,
-    input$Hazards.THI_max,
-    input$Hazards.NDWS,
-    input$Hazards.TAI,
-    input$Hazards.NDWL0)
+  c(NDD=input$Hazards.NDD,
+    NTx40=input$Hazards.NTx40,
+    HSM_NTx35=input$Hazards.HSM_NTx35,
+    HSH_max=input$Hazards.HSH_max,
+    THI_max=input$Hazards.THI_max,
+    NDWS=input$Hazards.NDWS,
+    TAI=input$Hazards.TAI,
+    NDWL0=input$Hazards.NDWL0)
 })
 
 
 Hazards_Class_hist1<-reactive({
   class_hazards_fun(classes=classes(),
-                    haz_names=hazards,
                     folder=folder,
                     haz_class=haz_class,
                     BaseRaster=BaseRaster,
@@ -1057,7 +1056,6 @@ Hazards_Class1<-reactive({
   Hazards_Class_hist1()
 }else{
   class_hazards_fun(classes=classes(),
-                    haz_names=hazards,
                     folder=folder,
                     haz_class=haz_class,
                     BaseRaster=BaseRaster,
