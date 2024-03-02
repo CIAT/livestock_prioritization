@@ -175,9 +175,12 @@ WRI.Both.CarbonLoss.ha.yr<-terra::rast("Data/GCLD/WRI.Both.CarbonLoss.ha.yr.tif"
 WRI.Both.CarbonLoss.pix.yr<-terra::rast("Data/GCLD/WRI.Both.CarbonLoss.pix.yr.tif")
 
 # Total emissions ####
+
 # Check magnitudes are are roughly similar (units are scaled correctly)
 LS.CO2e$`All livestock`
 WRI.Both.CarbonLoss.pix.yr
 
 # Add direct to indirect
 Combined.CO2e<-LS.CO2e$`All livestock`+WRI.Both.CarbonLoss.pix.yr
+
+# Units are megatons (multiply by 10^6 to get to Mg (tons))
