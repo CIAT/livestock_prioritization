@@ -41,11 +41,17 @@ required.packages <- c("biscale",
 
 pacman::p_load(char=required.packages,install = T,character.only = T)
 
+# Check if the installed version of rlang is at least the minimum required version
+if(packageVersion("rlang") < "1.0.6") {
+  # If the installed version is less than the required version, update the package
+  install.packages("rlang")
+}
+
 options(scipen = 999)
 ```
 
-*Authors: Peter Steward & Camila Bonilla-Cedrez*
-*E-mail: p.steward@cgiar.org*
+*Authors: Peter Steward, Camila Bonilla-Cedrez, Todd Rosenstock, Julian Ramirez
+*E-mail: p.steward@cgiar.org
 
 ## {.tabset .tabset-fade .tabset-pills}
 For this paper, we synthesized spatial data to identify priority geographies for livestock system investments in adaptation and mitigation. The study area included livestock production systems in all low-income, low- and middle-income, and upper-middle-income countries in mid and low latitudes.  
@@ -54,6 +60,7 @@ This interactive Rmarkdown script can be used to merge or disaggregate adaptatio
 
 ```{r Load CGIAR Countries,echo=F, warning=F}
 CGIAR_admin1_sf<-sf::read_sf("Data/GADM/4.1/gadm41_1.shp")
+#CGIAR_admin1_sf<-CGIAR_admin1_sf[grepl("Africa",CGIAR_admin1_sf$Region),]
 CGIAR_admin1_sf$ADMIN<-CGIAR_admin1_sf$NAME_1
 CGIAR_admin1_sf$ADMIN[grep("xico",CGIAR_admin1_sf$ADMIN)]<-"Mexico"
 CGIAR_admin1_sf$ADMIN[grep("and Pr",CGIAR_admin1_sf$ADMIN)]<-"Sao Tome and Principe"
@@ -64,6 +71,7 @@ CGIAR_admin1_sf$NAME_0<-CGIAR_admin1_sf$COUNTRY
 CGIAR_admin1<-terra::vect(CGIAR_admin1_sf)
 
 CGIAR_countries_sf<-sf::read_sf("Data/GADM/4.1/gadm41_0.shp",options = "ENCODING=UTF8")
+#CGIAR_countries_sf<-CGIAR_countries_sf[grepl("Africa",CGIAR_admin1_sf$Region),]
 CGIAR_countries_sf$NAME_0<-CGIAR_countries_sf$COUNTRY
 CGIAR_countries_sf$ADMIN<-CGIAR_countries_sf$COUNTRY
 CGIAR_countries_sf$ADMIN[grep("xico",CGIAR_countries_sf$ADMIN)]<-"Mexico"
@@ -528,6 +536,7 @@ CGIAR_countries <- terra::vect("Data/GADM/4.1/gadm41_0.shp")
 Create Worldbank regions layer:
 ```{r Create Worldbank regional layer}
 WB_Regions<-terra::vect("Data/GADM/4.1/WB_Regions.shp")
+#WB_Regions[WB_Regions$Region=="Sub-Saharan Africa",]
 WB_Regions$ADMIN<-WB_Regions$Region
 
 WB_Regions_sf<-sf::st_as_sf(WB_Regions,na.fail=T)
@@ -576,7 +585,7 @@ renderPlot({terra::plot(CGIAR_admin1,
                         legend=F,
                         type="classes",
                         border=input$BorderCol,
-                        main="CG Admin1 (GADM 3.6)",
+                        main="CG Admin1 (GADM 4.1)",
                         cex.main = input$TextSize*1.2,
                         pax=list(cex.axis=input$TextSize),
                         col=sample(viridis(n=length(unique(CGIAR_admin1$NAME_0)),option =input$Palette),replace=F),
@@ -612,7 +621,7 @@ Convert WDPA data to raster format (note that a pre-rasterized dataset is provid
 ```
 
 ```{r plot WPDA, echo =F}
-renderPlot({terra::plot(mask(WDPA_rast,CGIAR_countries2),
+renderPlot({terra::plot(crop(mask(WDPA_rast,ExtractBy()),ExtractBy()),
                         main="WDPA Protected Areas",
                         pax=list(cex.axis=input$TextSize),
                         plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
@@ -620,7 +629,7 @@ renderPlot({terra::plot(mask(WDPA_rast,CGIAR_countries2),
                         cex.main = input$TextSize*1.2,
                         axes = F,
                         frame.plot= F)
-          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+          terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 ```
 
@@ -643,15 +652,17 @@ levels(LPS_Suitable)<-data.frame(value=0:11,LPS=GPLS_Legend[1:12,System_Full])
 ```
 
 ```{r plot LPS, echo =F}
-renderPlot({terra::plot(mask(LPS_Suitable,CGIAR_countries2),
+renderPlot({terra::plot(crop(mask(LPS_Suitable,ExtractBy()),ExtractBy()),
                         main="Global Distribution of LPS (Robinson et al. 2014)",
                         pax=list(cex.axis=input$TextSize),
                         plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
-                        col=viridis(n=nrow(terra::cats(LPS_Suitable)[[1]]),option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
+                        col=viridis(n=nrow(terra::cats(LPS_Suitable)[[1]]),
+                                    option =input$Palette,
+                                    direction = if(input$Palette=="turbo"){1}else{-1}),
                         cex.main = input$TextSize*1.2,
                         axes = F,
                         frame.plot= F)
-          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+          terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 ```
 
@@ -681,7 +692,7 @@ Total global livestock units = `r round(sum(TLU[],na.rm = T)/10^6,1)` million.
 Total livestock units in geography selected = `r reactive({round(sum(terra::mask(TLU,ExtractBy())[],na.rm=T)/10^6,1)})` million.
 
 ```{r plot TLU, echo =F}
-renderPlot({terra::plot(mask(log10(TLU),CGIAR_countries2),
+renderPlot({terra::plot(crop(mask(log10(TLU),ExtractBy()),ExtractBy()),
                         main="log10(Total Livestock Units)",
                         pax=list(cex.axis=input$TextSize),
                         plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
@@ -689,7 +700,7 @@ renderPlot({terra::plot(mask(log10(TLU),CGIAR_countries2),
                         cex.main = input$TextSize*1.2,
                         axes = F,
                         frame.plot= F)
-          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+          terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 ```
 
@@ -709,7 +720,7 @@ poverty2<-reactive({terra::rasterize(poverty,BaseRaster,field=input$Param.Pov.La
 
 ```{r Povery - Plot Poverty,echo=F}
 renderPlot({
-terra::plot(poverty2(),
+terra::plot(crop(mask(poverty2(),ExtractBy()),ExtractBy()),
      maxcell=input$MaxPixels,
      pax=list(cex.axis=input$TextSize),
      plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
@@ -717,7 +728,7 @@ terra::plot(poverty2(),
      cex.main=input$TextSize,main='Population under poverty (%)',
                         axes = F,
                         frame.plot= F)
-terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+terra::plot(ExtractBy(),add=T,border=input$BorderCol)
 },height=Plot.Height, width=Plot.Width)
 
 ```
@@ -747,7 +758,7 @@ poverty_class<-reactive({
 
 ```{r Povery - Plot Poverty Classified,echo=F}
 renderPlot({
-terra::plot(poverty_class(),
+terra::plot(crop(mask(poverty_class(),ExtractBy()),ExtractBy()),
      maxcell=input$MaxPixels,
      pax=list(cex.axis=input$TextSize),
      plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
@@ -755,7 +766,7 @@ terra::plot(poverty_class(),
      cex.main=input$TextSize,main='Population under poverty (classes)',
      axes = F,
      frame.plot= F)
-  terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  terra::plot(ExtractBy(),add=T,border=input$BorderCol)
 },height=Plot.Height, width=Plot.Width)
 
 ```
@@ -850,14 +861,14 @@ Hazards<-terra::mask(Hazards,CGIAR_countries2)
 
 *Raw Hazards*
 ```{r plot raw hazards, echo =F}
-renderPlot({terra::plot(mask(Hazards,CGIAR_countries2),
+renderPlot({terra::plot(crop(mask(Hazards,ExtractBy()),ExtractBy()),
                         pax=list(cex.axis=input$TextSize),
                         plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
                         col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
                         cex.main = input$TextSize*1.2,
                         axes = F,
                         frame.plot= F)
-          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+          terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 ```
 
@@ -908,7 +919,7 @@ Hazards_Class<-reactive({c(rain_cv_class(),thi_class(),drydays_class(),floodrisk
 *Classified Hazards*
 ```{r plot hazards, echo=F}
 renderPlot({
-      terra::plot(x=Hazards_Class(),
+      terra::plot(x=crop(mask(Hazards_Class(),ExtractBy()),ExtractBy()),
                   pax=list(cex.axis=input$TextSize),
                   plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
                   cex.main=input$TextSize,
@@ -1000,7 +1011,7 @@ Hazards_Class2<-reactive({
 ```{r Hazards - Plot Combined Classes,echo=F}
 
 renderPlot({
-  terra::plot(Hazards_Class2()$Complete,
+  terra::plot(crop(mask(Hazards_Class2()$Complete,ExtractBy()),ExtractBy()),
        col=viridis(n=nrow(terra::cats(Hazards_Class2()$Complete)[[1]]),option = input$Palette,direction = 1),
        maxcell=input$MaxPixels,
        pax=list(cex.axis=input$TextSize),
@@ -1008,13 +1019,13 @@ renderPlot({
        cex.main=input$TextSize,
         axes = F,
         frame.plot= F)
-  terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  terra::plot(ExtractBy(),add=T,border=input$BorderCol)
 },height=Plot.Height, width=Plot.Width)
 ```
 *Number of Hazards*
 ```{r Hazards - Plot number of Hazards,echo=F}
 renderPlot({
-plot(Hazards_Class2()$N.Hazards,
+plot(crop(mask(Hazards_Class2()$N.Hazards,ExtractBy()),ExtractBy()),
      col=viridis(n=nrow(terra::cats(Hazards_Class2()$Complete)[[1]]),option = input$Palette,direction = 1),
      maxcell=input$MaxPixels,
      pax=list(cex.axis=input$TextSize),
@@ -1022,6 +1033,7 @@ plot(Hazards_Class2()$N.Hazards,
      cex.main=input$TextSize,
     axes = F,
     frame.plot= F)
+    terra::plot(ExtractBy(),add=T,border=input$BorderCol)
 },height=Plot.Height, width=Plot.Width)
 
 ```
@@ -1040,7 +1052,7 @@ Hazards_Class2_Masked<-reactive({
 
 ```{r Hazards - Plot Masked Combined Classes,echo=F}
 renderPlot({
-  terra::plot(Hazards_Class2_Masked()$Complete,
+  terra::plot(crop(mask(Hazards_Class2_Masked()$Complete,ExtractBy()),ExtractBy()),
        col=viridis(n=nrow(terra::cats(Hazards_Class2_Masked()$Complete)[[1]]),option = input$Palette,direction = 1),
        maxcell=input$MaxPixels,
        pax=list(cex.axis=input$TextSize),
@@ -1048,7 +1060,7 @@ renderPlot({
        cex.main=input$TextSize,
        axes = F,
        frame.plot= F)
-  terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  terra::plot(ExtractBy(),add=T,border=input$BorderCol)
 },height=Plot.Height, width=Plot.Width)
 ```
 
@@ -1103,7 +1115,7 @@ ExposureRaw<-c(log10(vop),log10(ruralpop),pasturearea,log(TLU2))
 names(ExposureRaw)<-c("log10(vop)","log10(ruralpop)","pasturearea","log10(TLU)")
 
 renderPlot({
-plot(ExposureRaw,
+plot(crop(mask(ExposureRaw,ExtractBy()),ExtractBy()),
      maxcell=input$MaxPixels,
      pax=list(cex.axis=input$TextSize),
       col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
@@ -1111,6 +1123,7 @@ plot(ExposureRaw,
      cex.main=input$TextSize,
     axes = F,
     frame.plot= F)
+    terra::plot(ExtractBy(),add=T,border=input$BorderCol)
 },height=Plot.Height, width=Plot.Width)
 ```
 
@@ -1136,7 +1149,7 @@ Exposure_masked_log<-reactive({
 })
 
 renderPlot({
-plot(Exposure_masked_log(),
+plot(crop(mask(Exposure_masked_log(),ExtractBy()),ExtractBy()),
      maxcell=input$MaxPixels,
      pax=list(cex.axis=input$TextSize),
       col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
@@ -1183,7 +1196,7 @@ Hazards_Class2_Masked2<-reactive({
 
 ```{GxHxE Plot Masked Hazards,echo=F}
 renderPlot({
-  terra::plot(Hazards_Class2_Masked2(),
+  terra::plot(crop(mask(Hazards_Class2_Masked2(),ExtractBy()),ExtractBy()),
        col=viridis(n=nrow(terra::cats(Hazards_Class2_Masked2())[[1]]),option = input$Palette,direction = 1),
        maxcell=input$MaxPixels,
        pax=list(cex.axis=input$TextSize),
@@ -1655,14 +1668,14 @@ names(FAO.N2O.Change)<-"N2O"
 
 **Proportional increase in livestock emissions 2000-2019 (FAOSTAT)**
 ```{r Plot increase in emissions data, echo =F}
-renderPlot({terra::plot(mask(c(FAO.CH4.Change,FAO.N2O.Change),ExtractBy()),
+renderPlot({terra::plot(crop(mask(c(FAO.CH4.Change,FAO.N2O.Change),ExtractBy()),ExtractBy()),
                         pax=list(cex.axis=input$TextSize),
                         plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
                         col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
                         cex.main = input$TextSize*1.2,
                         axes = F,
                         frame.plot= F)
-          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+          terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 
 ```
@@ -1701,7 +1714,7 @@ LS.CO2e<-reactive({
 
 **Direct emissions (units = log10(CO2eq) kg/km2/yr from Herrero 2000 multiplied by proportional change btw 2000-2019 as per FAO data**
 ```{r Plot emissions data, echo =F}
-renderPlot({terra::plot(mask(log10(LS.CO2e()),ExtractBy()),
+renderPlot({terra::plot(crop(mask(log10(LS.CO2e()),ExtractBy()),ExtractBy()),
                         pax=list(cex.axis=input$TextSize),
                         plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
                         range=c(0,8.2),
@@ -1709,7 +1722,7 @@ renderPlot({terra::plot(mask(log10(LS.CO2e()),ExtractBy()),
                         cex.main = input$TextSize*1.2,
                         axes = F,
                         frame.plot= F)
-          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+          terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 
 ```
@@ -1755,13 +1768,14 @@ names(CarbonStocks.Masked)<-"Biomass Masked By Forest Mt/ha"
 ```
 
 ```{r plot forest cover & carbon stocks, echo =F}
-renderPlot({terra::plot(mask(c(ForestCover09,CarbonStocks,CarbonStocks.Masked),ExtractBy()),
+renderPlot({terra::plot(crop(mask(c(ForestCover09,CarbonStocks,CarbonStocks.Masked),ExtractBy()),ExtractBy()),
                         pax=list(cex.axis=input$TextSize),
                         plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
                         col=viridis(n=input$Ncolours,option =input$Palette,direction = if(input$Palette=="turbo"){1}else{-1}),
                         cex.main = input$TextSize*1.2,
                         axes = F,
                         frame.plot= F)
+            terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 ```
 
@@ -1840,7 +1854,7 @@ WRI.Soy.CarbonLoss.pix.yr<-terra::rast("Data/GCLD/WRI.Soy.CarbonLoss.pix.yr.tif"
 ```
 
 ```{r Plot WRI pasture commodity loss per ha, echo=T}
-renderPlot({terra::plot(mask(WRI.Pasture.CarbonLoss.ha.yr,ExtractBy()),
+renderPlot({terra::plot(crop(mask(WRI.Pasture.CarbonLoss.ha.yr,ExtractBy()),ExtractBy()),
                         main="CO2e Mt/ha/yr emissions from forest loss due to pasture",
                         pax=list(cex.axis=input$TextSize),
                         plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
@@ -1848,13 +1862,13 @@ renderPlot({terra::plot(mask(WRI.Pasture.CarbonLoss.ha.yr,ExtractBy()),
                         cex.main= input$TextSize*1.2,
                         axes = F,
                         frame.plot= F)
-          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+          terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 
 ```
 
 ```{r Plot WRI soy commodity loss per ha, echo=T}
-renderPlot({terra::plot(mask(WRI.Soy.CarbonLoss.ha.yr,ExtractBy()),
+renderPlot({terra::plot(crop(mask(WRI.Soy.CarbonLoss.ha.yr,ExtractBy()),ExtractBy()),
                         main="CO2e Mt/ha/yr emissions from forest loss due to soy",
                         pax=list(cex.axis=input$TextSize),
                         plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
@@ -1862,7 +1876,7 @@ renderPlot({terra::plot(mask(WRI.Soy.CarbonLoss.ha.yr,ExtractBy()),
                         cex.main= input$TextSize*1.2,
                         axes = F,
                         frame.plot= F)
-          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+          terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 ```
 
@@ -1884,7 +1898,7 @@ WRI.Both.CarbonLoss.pix.yr<-terra::rast("Data/GCLD/WRI.Both.CarbonLoss.pix.yr.ti
 ```
 
 ```{r Plot combined WRI commodity loss per ha, echo =T}
-renderPlot({terra::plot(mask(WRI.Both.CarbonLoss.ha.yr,ExtractBy()),
+renderPlot({terra::plot(crop(mask(WRI.Both.CarbonLoss.ha.yr,ExtractBy()),ExtractBy()),
                         main="CO2e Mt/ha emissions from forest loss due to pasture + soy",
                         pax=list(cex.axis=input$TextSize),
                         plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
@@ -1892,7 +1906,7 @@ renderPlot({terra::plot(mask(WRI.Both.CarbonLoss.ha.yr,ExtractBy()),
                         cex.main= input$TextSize*1.2,
                         axes = F,
                         frame.plot= F)
-          terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+          terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 ```
 
@@ -1909,7 +1923,7 @@ SOC_pch2<-terra::mask(terra::mask(SOC_pch2,LPS_Suitable),WDPA_rast,inverse=T)
 
 ```{r Plot Trends.Earth SOC pch Data, echo =F, out.width="100%", fig.asp = .5}
 renderPlot({
-  terra::plot(SOC_pch2,
+  terra::plot(crop(mask(SOC_pch2,ExtractBy()),ExtractBy()),
               main="Percent change in SOC 2001-15 (Trends Earth)",
               pax=list(cex.axis=input$TextSize),
               plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
@@ -1918,7 +1932,7 @@ renderPlot({
               cex.main= input$TextSize*1.2,
               axes = F,
               frame.plot= F)
-  terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 
 ```
@@ -1941,7 +1955,7 @@ cuts <- reactive({
 SOC.Plot<-reactive({terra::mask(SOC.pch(),CGIAR_countries2)})
 
 renderPlot({
-  terra::plot(SOC.Plot(),
+  terra::plot(crop(mask(SOC.Plot(),ExtractBy()),ExtractBy()),
               main="Percent change in SOC 2001-15 (Trends Earth) masked by poverty",
               pax=list(cex.axis=input$TextSize),
               plg=list(x=input$LegPos,cex = input$TextSize,ncol=input$LegCols),
@@ -1950,7 +1964,7 @@ renderPlot({
               cex.main= input$TextSize*1.2,
               axes = F,
               frame.plot= F)
-  terra::plot(CGIAR_countries2,add=T,border=input$BorderCol)
+  terra::plot(ExtractBy(),add=T,border=input$BorderCol)
   },height=Plot.Height, width=Plot.Width)
 
 ```
