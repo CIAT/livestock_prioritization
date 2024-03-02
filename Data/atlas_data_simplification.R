@@ -64,7 +64,7 @@ TLU2<-TLU/terra::cellSize(TLU,unit="km")
 TLU2<-terra::resample(TLU2,BaseRaster,method="cubic")
 TLU2<-TLU2*CellSize.km
 
-# Direct Emissions ####
+# Direct Emissions (NH4 and N2O) ####
 
 # Load FAOSTAT Emissions data:
 # Load FAO Emissions
@@ -160,9 +160,11 @@ N2O.km2.19<-N2O.km2.00*FAO.N2O.Change
 # This is total direct emissions by livestock groups according to Herrero et al.
 LS.CO2e<-CH4.km2.19+N2O.km2.19
 
-plot(LS.CO2e)
+# Convert to Mt/ha/yr
+LS.CO2e<-LS.CO2e/10^9
 
 # Indirect emissions (Forest Loss) ####
+# Forest loss linked to livestock or soy
 WRI.Pasture.CarbonLoss.ha.yr<-terra::rast("Data/GCLD/WRI.Pasture.CarbonLoss.ha.yr.tif")
 WRI.Soy.CarbonLoss.ha.yr<-terra::rast("Data/GCLD/WRI.Soy.CarbonLoss.ha.yr.tif")
 
@@ -171,3 +173,11 @@ WRI.Soy.CarbonLoss.pix.yr<-terra::rast("Data/GCLD/WRI.Soy.CarbonLoss.pix.yr.tif"
 
 WRI.Both.CarbonLoss.ha.yr<-terra::rast("Data/GCLD/WRI.Both.CarbonLoss.ha.yr.tif")
 WRI.Both.CarbonLoss.pix.yr<-terra::rast("Data/GCLD/WRI.Both.CarbonLoss.pix.yr.tif")
+
+# Total emissions ####
+# Check magnitudes are are roughly similar (units are scaled correctly)
+LS.CO2e$`All livestock`
+WRI.Both.CarbonLoss.pix.yr
+
+# Add direct to indirect
+Combined.CO2e<-LS.CO2e$`All livestock`+WRI.Both.CarbonLoss.pix.yr
