@@ -39,8 +39,10 @@ Horse<-terra::rast("Data/GLW3/5_Ho_2010_Da.tif")
 Pig<-terra::rast("Data/GLW3/5_Pg_2010_Da.tif")
 Sheep<-terra::rast("Data/GLW3/5_Sh_2010_Da.tif")
 # We are using interpolated rasters indicated by `_Da` in the filename.
+# Units are total number per pixel
 
 # Convert number of livestock into total livestock units (TLU) as per [Rothman-Ostrow et al. 2020](https://www.frontiersin.org/articles/10.3389/fvets.2020.556788/full):
+# Unit is TLUs per pixel
 TLU<-Cattle*0.7 + Buffalo*0.7 + Sheep*0.1 + Goat*0.1 + 0.01*Chicken + 0.2*Pig + 0.8*Horse
 Livestock<-c(Cattle,Buffalo,Chicken,Goat,Horse,Pig,Sheep,TLU)
 names(Livestock)<-c("Cattle.LU","Buffalo.LU","Chicken.LU","Goat.LU","Horse.LU","Pig.LU","Sheep.LU","Total.LU")
@@ -48,21 +50,19 @@ names(Livestock)<-c("Cattle.LU","Buffalo.LU","Chicken.LU","Goat.LU","Horse.LU","
 # VoP ####
 # note vop, ruralpop and pasturearea are from cell5m so do not require resampling
 
-# unit of vop is 100 USD
+# unit of vop is 100 USD per pixel
 vop<-terra::rast(list.files("./Data/Exposure","cell5m_livestock_vop",full.names = T))
 vop<-terra::resample(vop,BaseRaster,method="near")
 
 # Rural Pop ####
+# Unit is number per pixel
 ruralpop<-terra::rast(list.files("./Data/Exposure","cell5m_ruralpop_2020_v3",full.names = T))
 ruralpop<-terra::resample(ruralpop,BaseRaster,method="near")
 
 # Pasture Area ####
+# Unit is hectares/pixel
 pasturearea<-terra::rast(list.files("./Data/Exposure","Pasture_area",full.names = T))
 pasturearea<-terra::resample(pasturearea,BaseRaster,method="near")
-
-TLU2<-TLU/terra::cellSize(TLU,unit="km")
-TLU2<-terra::resample(TLU2,BaseRaster,method="cubic")
-TLU2<-TLU2*CellSize.km
 
 # Direct Emissions (NH4 and N2O) ####
 
